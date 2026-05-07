@@ -4,10 +4,10 @@ import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
 
 function App() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   return (
-    <div className="relative w-full h-screen">
+    <div className="relative w-full h-dvh">
       <MapView />
       <Sidebar isOpen={isSidebarOpen} onToggle={() => setIsSidebarOpen(!isSidebarOpen)} />
       <QuickActionButton />

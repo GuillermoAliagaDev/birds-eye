@@ -1,43 +1,82 @@
-import { X, Menu } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Menu, Layers, MapPin, Settings } from 'lucide-react'
+
+const menuItems = [
+  { icon: Layers, label: 'Capas' },
+  { icon: MapPin, label: 'Puntos' },
+  { icon: Settings, label: 'Ajustes' },
+]
 
 function Sidebar({ isOpen, onToggle }) {
+  const [activeItem, setActiveItem] = useState(0)
+
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [isOpen])
+
   return (
     <>
-      <div
-        className={`fixed top-4 left-4 z-50 transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-40
+          bg-[#111113] text-white
+          transition-transform duration-300 ease-out
+          flex flex-col
+          md:w-72 w-full
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
       >
-        <div className="w-72 bg-black backdrop-blur-lg rounded-2xl border border-white/30 shadow-xl p-4 text-white">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Birds Eye</h2>
-            <button
-              onClick={onToggle}
-              className="p-1 rounded-lg hover:bg-white/20 transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <p className="text-sm opacity-80 mb-4">Panel de funciones GIS</p>
-          <div className="space-y-2">
-            <div className="p-3 bg-white/10 rounded-xl hover:bg-white/20 cursor-pointer transition-colors">
-              Función 1
-            </div>
-            <div className="p-3 bg-white/10 rounded-xl hover:bg-white/20 cursor-pointer transition-colors">
-              Función 2
-            </div>
-            <div className="p-3 bg-white/10 rounded-xl hover:bg-white/20 cursor-pointer transition-colors">
-              Función 3
-            </div>
-          </div>
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <MapPin size={20} className="text-blue-400" />
+            MUV - Bird's Eye
+          </h2>
+          <button
+            onClick={onToggle}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+          >
+            <X size={20} />
+          </button>
         </div>
-      </div>
+
+        <nav className="flex-1 p-4 space-y-1">
+          {menuItems.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveItem(i)}
+              className={`
+                w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm
+                transition-all duration-200
+                ${activeItem === i
+                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'}
+              `}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-white/10 text-xs text-gray-500 text-center">
+          Panel GIS v1.0
+        </div>
+      </aside>
+
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={onToggle}
+        />
+      )}
 
       {!isOpen && (
         <button
           onClick={onToggle}
-          className="fixed top-4 left-4 z-50 p-3 bg-white/20 backdrop-blur-lg rounded-xl border border-white/30 shadow-lg text-white hover:bg-white/30 transition-all"
+          className="fixed top-4 left-4 z-50 p-3 bg-[#111113] rounded-xl shadow-lg text-white hover:bg-[#1a1a1d] transition-all"
         >
-          <Menu size={24} />
+          <Menu size={22} />
         </button>
       )}
     </>
