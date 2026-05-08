@@ -1,6 +1,6 @@
-import { Zap } from 'lucide-react'
+import { LocateFixed } from 'lucide-react'
 
-function QuickActionButton() {
+function QuickActionButton({ onClick }) {
   return (
     <button
       className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 
@@ -11,9 +11,9 @@ function QuickActionButton() {
                  flex items-center justify-center
                  transition-all duration-300 
                  hover:scale-110 active:scale-95"
-      onClick={() => alert('Acción Rápida!')}
+      onClick={onClick}
     >
-      <Zap size={24} className="text-white md:w-7 md:h-7" />
+      <LocateFixed size={24} className="text-white md:w-7 md:h-7" />
     </button>
   )
 }
