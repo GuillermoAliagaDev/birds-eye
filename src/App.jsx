@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
+import { getSupabase } from './lib/supabase'
 
 const defaultStops = [
   { name: 'Partida: Av. 28 de Julio 1014',             lng: -77.0315, lat: -12.1202 },
@@ -36,6 +37,43 @@ function App() {
   const [recenterTrigger, setRecenterTrigger] = useState(0)
   const [stops, setStops] = useState(defaultStops)
   const [isAddingStop, setIsAddingStop] = useState(false)
+  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('supabase_url') || '')
+  const [supabaseKey, setSupabaseKey] = useState(() => localStorage.getItem('supabase_anon_key') || '')
+  const [isSharing, setIsSharing] = useState(false)
+
+  const handleSetSupabaseUrl = useCallback((url) => {
+    setSupabaseUrl(url)
+    localStorage.setItem('supabase_url', url)
+  }, [])
+
+  const handleSetSupabaseKey = useCallback((key) => {
+    setSupabaseKey(key)
+    localStorage.setItem('supabase_anon_key', key)
+  }, [])
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey) return
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+    sb.from('routes').select('*').order('id', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        if (data?.length > 0 && data[0].stops?.length > 1) {
+          setStops(data[0].stops)
+        }
+      })
+      .catch(() => {})
+  }, [supabaseUrl, supabaseKey])
+
+  const saveRoute = useCallback(async () => {
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+    const { error } = await sb.from('routes').insert({ stops, name: 'Ruta principal' })
+    if (!error) {
+      const updated = [...stops]
+      updated[updated.length - 1] = { ...updated[updated.length - 1], name: updated[updated.length - 1].name + ' ✓' }
+      setTimeout(() => setStops(updated), 100)
+    }
+  }, [supabaseUrl, supabaseKey, stops])
 
   return (
     <div className="relative w-full h-dvh">
@@ -46,6 +84,10 @@ function App() {
         setStops={setStops}
         isAddingStop={isAddingStop}
         setIsAddingStop={setIsAddingStop}
+        supabaseUrl={supabaseUrl}
+        supabaseKey={supabaseKey}
+        isSharing={isSharing}
+        setIsSharing={setIsSharing}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -55,6 +97,13 @@ function App() {
         isAddingStop={isAddingStop}
         setIsAddingStop={setIsAddingStop}
         defaultStops={defaultStops}
+        supabaseUrl={supabaseUrl}
+        setSupabaseUrl={handleSetSupabaseUrl}
+        supabaseKey={supabaseKey}
+        setSupabaseKey={handleSetSupabaseKey}
+        isSharing={isSharing}
+        setIsSharing={setIsSharing}
+        saveRoute={saveRoute}
       />
       <QuickActionButton onClick={() => setRecenterTrigger(t => t + 1)} />
     </div>

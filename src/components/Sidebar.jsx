@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, Menu, Layers, MapPin, Settings, Plus, Trash2, RotateCcw, Map } from 'lucide-react'
+import { X, Menu, MapPin, Settings, Plus, Trash2, RotateCcw, Map, Save, Wifi, WifiOff } from 'lucide-react'
+import { getDeviceId, getDeviceName, setDeviceName } from '../lib/supabase'
 
 const menuItems = [
   { icon: Map, label: 'Mapa' },
@@ -7,7 +8,7 @@ const menuItems = [
   { icon: Settings, label: 'Ajustes' },
 ]
 
-function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingStop, defaultStops }) {
+function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingStop, defaultStops, supabaseUrl, setSupabaseUrl, supabaseKey, setSupabaseKey, isSharing, setIsSharing, saveRoute }) {
   const [activeItem, setActiveItem] = useState(1)
 
   useEffect(() => {
@@ -143,7 +144,68 @@ function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingS
           )}
 
           {activeItem === 2 && (
-            <div className="p-6 text-gray-500 text-xs text-center">Próximamente</div>
+            <div className="p-3 space-y-4">
+              <div className="text-xs font-semibold text-white/80">Conexión Supabase</div>
+
+              <input value={supabaseUrl} onChange={e => setSupabaseUrl(e.target.value)}
+                placeholder="URL del proyecto (ej: https://xxx.supabase.co)"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+              />
+              <input value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)}
+                placeholder="Anon Key (public)"
+                type="password"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+              />
+
+              {supabaseUrl && supabaseKey && (
+                <>
+                  <div className="border-t border-white/5 pt-4 space-y-3">
+                    <div className="text-xs font-semibold text-white/80">Compartir ubicación</div>
+
+                    <input defaultValue={getDeviceName()} onChange={e => setDeviceName(e.target.value)}
+                      placeholder="Tu nombre (opcional)"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+                    />
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {isSharing ? <Wifi size={14} className="text-green-400" /> : <WifiOff size={14} className="text-gray-500" />}
+                        <span className="text-xs text-white/80">{isSharing ? 'Compartiendo' : 'Compartir ubicación'}</span>
+                      </div>
+                      <button onClick={() => setIsSharing(!isSharing)}
+                        className={`relative w-10 h-5 rounded-full transition-all ${isSharing ? 'bg-green-500' : 'bg-white/10'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isSharing ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+
+                    <div className="text-[10px] text-gray-500 font-mono truncate">
+                      ID: {getDeviceId().slice(0, 12)}…
+                    </div>
+
+                    <div className="border-t border-white/5 pt-3">
+                      <div className="text-xs font-semibold text-white/80 mb-2">Ruta</div>
+                      <button onClick={saveRoute}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30 transition-all"
+                      >
+                        <Save size={12} />
+                        Guardar ruta en Supabase
+                      </button>
+                      <p className="text-[10px] text-gray-600 mt-1">
+                        Todos los dispositivos conectados verán esta ruta.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {!supabaseUrl && (
+                <div className="text-[10px] text-gray-500 leading-relaxed">
+                  Ingresa las credenciales de tu proyecto Supabase para compartir ubicación en tiempo real.
+                  {' '}Revisa el archivo <code className="text-blue-400">supabase-schema.sql</code> para crear las tablas necesarias.
+                </div>
+              )}
+            </div>
           )}
         </div>
 

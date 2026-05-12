@@ -1,0 +1,39 @@
+import { createClient } from '@supabase/supabase-js'
+
+let cachedClient = null
+let cachedUrl = ''
+let cachedKey = ''
+
+export function getSupabase(url, key) {
+  if (!url || !key) return null
+  if (!cachedClient || cachedUrl !== url || cachedKey !== key) {
+    cachedClient = createClient(url, key)
+    cachedUrl = url
+    cachedKey = key
+  }
+  return cachedClient
+}
+
+export function getDeviceId() {
+  let id = localStorage.getItem('device_id')
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10)
+    localStorage.setItem('device_id', id)
+  }
+  return id
+}
+
+export function getDeviceName() {
+  return localStorage.getItem('device_name') || ''
+}
+
+export function setDeviceName(name) {
+  localStorage.setItem('device_name', name)
+}
+
+export function getSupabaseCredentials() {
+  return {
+    url: localStorage.getItem('supabase_url') || '',
+    key: localStorage.getItem('supabase_anon_key') || '',
+  }
+}

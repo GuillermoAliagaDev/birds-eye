@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Map, { Marker, NavigationControl, Source, Layer } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Flag, LocateOff, Navigation } from 'lucide-react'
+import { Flag, LocateOff, Navigation, Smartphone } from 'lucide-react'
+import { getSupabase, getDeviceId, getDeviceName } from '../lib/supabase'
 
 const osmStyle = {
   version: 8,
@@ -37,6 +38,16 @@ const previewLineStyle = {
   },
 }
 
+const fullPreviewLineStyle = {
+  id: 'full-preview-line',
+  type: 'line',
+  paint: {
+    'line-color': '#5893DE',
+    'line-width': 5,
+    'line-opacity': 0.6,
+  },
+}
+
 function calcHeading(lat1, lng1, lat2, lng2) {
   const dLng = ((lng2 - lng1) * Math.PI) / 180
   const y = Math.sin(dLng) * Math.cos((lat2 * Math.PI) / 180)
@@ -68,7 +79,7 @@ function interpolateRoute(wpts, segments = 600) {
   return result
 }
 
-function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop }) {
+function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing }) {
   const mapRef = useRef(null)
   const [userPos, setUserPos] = useState(null)
   const [geoStatus, setGeoStatus] = useState('idle')
@@ -85,6 +96,15 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   const simRef = useRef({ running: false })
   const previewCacheRef = useRef({})
   const previewTimeoutRef = useRef(null)
+  const fullPreviewTimerRef = useRef(null)
+  const fullPreviewCacheRef = useRef({})
+  const stopIndicesRef = useRef([])
+  const [simIdx, setSimIdx] = useState(0)
+  const [confirmPosition, setConfirmPosition] = useState(null)
+  const [fullPreviewCoords, setFullPreviewCoords] = useState(null)
+  const [fullPreviewLoading, setFullPreviewLoading] = useState(false)
+  const [remoteUsers, setRemoteUsers] = useState({})
+  const locationIntervalRef = useRef(null)
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas()
@@ -108,7 +128,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   useEffect(() => { requestLocation() }, [requestLocation])
 
   const runSimulation = useCallback((coords) => {
-    setRouteCoords(coords); setSimPos(coords[0]); simRef.current.running = true
+    setRouteCoords(coords); setSimPos(coords[0]); setSimIdx(0); simRef.current.running = true
     const duration = 90000
     const startTime = performance.now()
     const tick = (timestamp) => {
@@ -116,21 +136,21 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       const elapsed = timestamp - startTime
       const progress = Math.min(elapsed / duration, 1)
       const idx = Math.floor(progress * (coords.length - 1))
-      setSimPos(coords[idx])
+      setSimPos(coords[idx]); setSimIdx(idx)
       if (idx > 0 && idx < coords.length) {
         const [lng, lat] = coords[idx]; const [prevLng, prevLat] = coords[idx - 1]
         const heading = calcHeading(prevLat, prevLng, lat, lng)
         mapRef.current?.easeTo({ center: [lng, lat], bearing: heading, pitch: 60, zoom: 17, duration: 300 })
       }
       if (progress >= 1) {
-        simRef.current.running = false; setIsRaceActive(false); setRouteCoords(null); setSimPos(null)
+        simRef.current.running = false; setIsRaceActive(false); setRouteCoords(null); setSimPos(null); setSimIdx(0)
         setRutaEndMsg(true); mapRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 1500 })
         setTimeout(() => setRutaEndMsg(false), 4000); return
       }
       animRef.current = requestAnimationFrame(tick)
     }
     animRef.current = requestAnimationFrame(tick)
-  }, [])
+  }, [setSimIdx])
 
   useEffect(() => {
     if (!isRaceActive) {
@@ -149,7 +169,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         else runSimulation(interpolateRoute(stops))
       })
       .catch(() => { if (!cancelled) runSimulation(interpolateRoute(stops)) })
-    return () => { cancelled = true; animRef.current && cancelAnimationFrame(animRef.current); simRef.current.running = false }
+    return () => { cancelled = true; animRef.current && cancelAnimationFrame(animRef.current); simRef.current.running = false; setSimIdx(0) }
   }, [isRaceActive, runSimulation, stops])
 
   const recenter = useCallback(() => {
@@ -163,9 +183,112 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   useEffect(() => { if (rutaEndMsg) { const t = setTimeout(() => setRutaEndMsg(false), 4000); return () => clearTimeout(t) } }, [rutaEndMsg])
   useEffect(() => { if (rutaMsg) { const t = setTimeout(() => setRutaMsg(false), 3000); return () => clearTimeout(t) } }, [rutaMsg])
 
+  useEffect(() => {
+    if (stops.length < 2 || isRaceActive) { setFullPreviewCoords(null); setFullPreviewLoading(false); return }
+    const cacheKey = stops.map(s => `${s.lng.toFixed(5)},${s.lat.toFixed(5)}`).join('|')
+    if (fullPreviewCacheRef.current[cacheKey]) {
+      setFullPreviewCoords(fullPreviewCacheRef.current[cacheKey]); setFullPreviewLoading(false); return
+    }
+    setFullPreviewCoords(interpolateRoute(stops))
+    setFullPreviewLoading(true)
+    if (fullPreviewTimerRef.current) clearTimeout(fullPreviewTimerRef.current)
+    fullPreviewTimerRef.current = setTimeout(async () => {
+      const stopStr = stops.map(s => `${s.lng},${s.lat}`).join(';')
+      try {
+        const res = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${stopStr}?geometries=geojson&overview=full`
+        )
+        const data = await res.json()
+        if (data?.routes?.[0]?.geometry?.coordinates?.length > 0) {
+          const coords = data.routes[0].geometry.coordinates
+          fullPreviewCacheRef.current[cacheKey] = coords
+          const keys = Object.keys(fullPreviewCacheRef.current)
+          if (keys.length > 50) delete fullPreviewCacheRef.current[keys[0]]
+          setFullPreviewCoords(coords)
+        }
+      } catch {}
+      setFullPreviewLoading(false)
+    }, 500)
+    return () => { if (fullPreviewTimerRef.current) clearTimeout(fullPreviewTimerRef.current) }
+  }, [stops, isRaceActive])
+
+  useEffect(() => {
+    if (!routeCoords || stops.length < 2) { stopIndicesRef.current = []; return }
+    const indices = stops.map(stop => {
+      let minDist = Infinity, minIdx = 0
+      for (let i = 0; i < routeCoords.length; i++) {
+        const [lng, lat] = routeCoords[i]
+        const d = (lng - stop.lng) ** 2 + (lat - stop.lat) ** 2
+        if (d < minDist) { minDist = d; minIdx = i }
+      }
+      return minIdx
+    })
+    stopIndicesRef.current = indices
+  }, [routeCoords, stops])
+
+  useEffect(() => {
+    if (!isSharing || !userPos || !supabaseUrl || !supabaseKey) {
+      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
+      return
+    }
+    const send = async () => {
+      const sb = getSupabase(supabaseUrl, supabaseKey)
+      if (!sb) return
+      const [lat, lng] = userPos
+      const heading = isSharing ? 0 : 0
+      await sb.from('locations').upsert({
+        device_id: getDeviceId(),
+        name: getDeviceName() || getDeviceId().slice(0, 8),
+        lat, lng, heading,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'device_id', ignoreDuplicates: false }).maybeSingle()
+    }
+    send()
+    locationIntervalRef.current = setInterval(send, 3000)
+    return () => { if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null } }
+  }, [isSharing, userPos, supabaseUrl, supabaseKey])
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey) { setRemoteUsers({}); return }
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+
+    sb.from('locations').select('*')
+      .then(({ data }) => {
+        if (data) {
+          const map = {}
+          data.forEach(row => { if (row.device_id !== getDeviceId()) map[row.device_id] = row })
+          setRemoteUsers(map)
+        }
+      })
+      .catch(() => {})
+
+    const channel = sb.channel('locations-remote')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'locations' },
+        (payload) => {
+          const row = payload.new
+          if (row.device_id === getDeviceId()) return
+          setRemoteUsers(prev => ({ ...prev, [row.device_id]: row }))
+        }
+      )
+      .subscribe()
+
+    const cleanup = setInterval(() => {
+      sb.from('locations').select('*').limit(1).catch(() => {
+        setRemoteUsers({})
+      })
+    }, 30000)
+
+    return () => {
+      sb.removeChannel(channel)
+      clearInterval(cleanup)
+    }
+  }, [supabaseUrl, supabaseKey])
+
   const handleToggleRace = () => {
     if (isRaceActive) {
-      setIsRaceActive(false); setRouteCoords(null); setSimPos(null)
+      setIsRaceActive(false); setRouteCoords(null); setSimPos(null); setSimIdx(0)
       mapRef.current?.easeTo({ pitch: 0, bearing: 0, duration: 1000 })
     } else {
       if (stops.length < 2) { setRutaMsg(true); setTimeout(() => setRutaMsg(false), 2000); return }
@@ -176,15 +299,28 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     }
   }
 
-  const handleMapClick = useCallback((e) => {
-    if (!isAddingStop) return
+  const handleMapClick = useCallback(async (e) => {
+    if (!isAddingStop || confirmPosition) return
     const { lng, lat } = e.lngLat
     const name = `Punto ${stops.length + 1}`
-    setStops(prev => [...prev, { name, lng, lat }])
+    setConfirmPosition({ lng, lat, name, street: null })
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lng=${lng}`
+      )
+      const data = await res.json()
+      const addr = data?.address
+      const parts = data?.display_name?.split(',').map(s => s.trim()) || []
+      const road = addr?.road || addr?.pedestrian || addr?.street || addr?.footway || addr?.path || addr?.cycleway || ''
+      const area = addr?.suburb || addr?.neighbourhood || addr?.quarter || addr?.city_district || addr?.city || ''
+      const street = [road, area].filter(Boolean).join(', ') || parts.slice(0, 2).join(', ') || ''
+      setConfirmPosition(prev => prev && prev.lng === lng && prev.lat === lat ? { ...prev, street } : prev)
+    } catch {
+      setConfirmPosition(prev => prev && prev.lng === lng && prev.lat === lat ? { ...prev, street: '' } : prev)
+    }
     setHoverPos(null); setPreviewRoute(null); setPreviewLoading(false)
     if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current)
-    setIsAddingStop(false)
-  }, [isAddingStop, stops.length, setStops, setIsAddingStop])
+  }, [isAddingStop, stops.length, confirmPosition])
 
   const fetchPreviewRoute = useCallback(async (from, to) => {
     const key = `${from.lng.toFixed(4)},${from.lat.toFixed(4)}-${to[0].toFixed(4)},${to[1].toFixed(4)}`
@@ -214,7 +350,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   }, [isAddingStop])
 
   const handleMapMove = useCallback((e) => {
-    if (!isAddingStop || !e.lngLat) return
+    if (!isAddingStop || !e.lngLat || confirmPosition) return
     const pos = [e.lngLat.lng, e.lngLat.lat]
     setHoverPos(pos)
     if (stops.length === 0) { setPreviewRoute(null); return }
@@ -222,12 +358,17 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     previewTimeoutRef.current = setTimeout(() => {
       fetchPreviewRoute(stops[stops.length - 1], pos)
     }, 250)
-  }, [isAddingStop, stops, fetchPreviewRoute])
+  }, [isAddingStop, stops, fetchPreviewRoute, confirmPosition])
 
   const routeGeoJSON = routeCoords ? {
-    type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: routeCoords },
+    type: 'Feature', properties: {},
+    geometry: { type: 'LineString', coordinates: isRaceActive && simIdx > 0 ? routeCoords.slice(simIdx) : routeCoords },
   } : null
   const simLng = simPos ? simPos[0] : null; const simLat = simPos ? simPos[1] : null
+  const completedStops = new Set()
+  if (isRaceActive && simIdx > 0 && stopIndicesRef.current.length === stops.length) {
+    stopIndicesRef.current.forEach((idx, i) => { if (simIdx >= idx) completedStops.add(i) })
+  }
 
   return (
     <>
@@ -245,6 +386,15 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         {routeGeoJSON && (
           <Source id="route" type="geojson" data={routeGeoJSON}>
             <Layer {...lineStyle} />
+          </Source>
+        )}
+
+        {!isRaceActive && fullPreviewCoords && (
+          <Source id="full-preview" type="geojson" data={{
+            type: 'Feature', properties: {},
+            geometry: { type: 'LineString', coordinates: fullPreviewCoords },
+          }}>
+            <Layer {...fullPreviewLineStyle} />
           </Source>
         )}
 
@@ -273,11 +423,30 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
           </Marker>
         )}
 
+        {Object.entries(remoteUsers).map(([deviceId, user]) => {
+          if (deviceId === getDeviceId()) return null
+          return (
+            <Marker key={deviceId} longitude={user.lng} latitude={user.lat} anchor="center">
+              <div className="relative group">
+                <div className="w-5 h-5 rounded-full bg-purple-500 border-2 border-white shadow-lg flex items-center justify-center">
+                  <Smartphone size={10} className="text-white" />
+                </div>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block whitespace-nowrap z-10">
+                  <div className="bg-[#111113] text-white text-[9px] px-1.5 py-0.5 rounded border border-white/10 shadow-lg">
+                    {user.name || deviceId.slice(0, 8)}
+                  </div>
+                </div>
+              </div>
+            </Marker>
+          )
+        })}
+
         {stops.map((s, i) => (
           <Marker key={i} longitude={s.lng} latitude={s.lat} anchor="center">
             <div className="relative group cursor-pointer">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 transition-all ${
-                isRaceActive ? 'bg-blue-500/80 text-white border-blue-300'
+                completedStops.has(i) ? 'bg-green-500 text-white border-green-300'
+                  : isRaceActive ? 'bg-blue-500/80 text-white border-blue-300'
                   : isAddingStop ? 'bg-green-500/80 text-white border-green-300'
                   : 'bg-[#111113]/90 text-blue-400 border-blue-500/50 hover:bg-[#1f1f22]'
               }`}>
@@ -368,6 +537,59 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       {rutaEndMsg && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#111113] text-yellow-400 border border-yellow-500/30 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium animate-pulse">
           RUTA COMPLETADA — Presiona bandera para reiniciar
+        </div>
+      )}
+
+      {confirmPosition && (
+        <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+          onClick={(e) => e.target === e.currentTarget && setConfirmPosition(null)}
+        >
+          <div className="bg-[#111113] border border-white/20 rounded-2xl p-5 max-w-xs w-full shadow-2xl">
+            <h3 className="text-white font-semibold text-sm mb-1">Agregar punto</h3>
+            <div className="min-h-[20px] mb-2">
+              {confirmPosition.street === null ? (
+                <div className="flex items-center gap-2 text-white/60 text-xs">
+                  <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  Obteniendo dirección...
+                </div>
+              ) : (
+                <p className="text-white/80 text-xs">{confirmPosition.street || 'Ubicación sin nombre'}</p>
+              )}
+            </div>
+            <div className="text-[10px] text-gray-500 font-mono mb-4">
+              {confirmPosition.lat.toFixed(5)}, {confirmPosition.lng.toFixed(5)}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmPosition(null)}
+                className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-medium hover:bg-white/20 transition-all"
+              >
+                Cancelar
+              </button>
+              <button onClick={() => {
+                setStops(p => [...p, { name: confirmPosition.name, lng: confirmPosition.lng, lat: confirmPosition.lat }])
+                setConfirmPosition(null)
+                setIsAddingStop(false)
+              }}
+                className="flex-1 py-2 rounded-xl bg-blue-500 text-white text-xs font-medium hover:bg-blue-600 transition-all"
+              >
+                Agregar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fullPreviewLoading && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-blue-500/80 backdrop-blur-sm px-3 py-1.5 rounded-full text-[10px] text-white flex items-center gap-1.5 shadow-lg">
+          <div className="w-2 h-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          Calculando ruta...
+        </div>
+      )}
+
+      {isSharing && (
+        <div className="fixed top-20 left-4 z-40 bg-green-500/20 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-green-500/30 text-[10px] text-green-400 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          {Object.keys(remoteUsers).length} usuarios
         </div>
       )}
 

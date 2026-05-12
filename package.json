@@ -12,11 +12,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "lucide-react": "^0.400.0",
+    "maplibre-gl": "^4.7.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "maplibre-gl": "^4.7.1",
-    "react-map-gl": "^7.1.8",
-    "lucide-react": "^0.400.0"
+    "react-map-gl": "^7.1.8"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
