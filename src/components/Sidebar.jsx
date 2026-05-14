@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Menu, MapPin, Settings, Plus, Trash2, Save, Wifi, WifiOff, Route, LogIn, BugPlay } from 'lucide-react'
+import { X, Menu, MapPin, Settings, Plus, Trash2, Save, Wifi, WifiOff, Route, LogIn } from 'lucide-react'
 import { getSupabase, getDeviceId, getDeviceName, setDeviceName } from '../lib/supabase'
 
 const menuItems = [
@@ -11,7 +11,7 @@ function Sidebar({
   isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingStop,
   supabaseUrl, setSupabaseUrl, supabaseKey, setSupabaseKey,
   isSharing, setIsSharing, isAdmin, setIsAdmin, supabaseStatus,
-  testSimActive, onToggleTestSim,
+  // testSimActive, onToggleTestSim,
   routes, activeRouteId, onSelectRoute, onCreateRoute, onSaveRoute, onDeleteRoute,
 }) {
   const [activeItem, setActiveItem] = useState(0)
@@ -245,20 +245,7 @@ function Sidebar({
                       ID: {getDeviceId().slice(0, 12)}…
                     </div>
 
-                    {isAdmin && (
-                      <>
-                        <button onClick={onToggleTestSim}
-                          className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs border transition-all ${
-                            testSimActive
-                              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/30'
-                              : 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border-green-500/30'
-                          }`}
-                        >
-                          <BugPlay size={12} />
-                          {testSimActive ? 'Detener simulación' : 'Simular tráfico'}
-                        </button>
-                      </>
-                    )}
+                    {/* test-sim button commented out */}
                   </div>
                 </>
               )}

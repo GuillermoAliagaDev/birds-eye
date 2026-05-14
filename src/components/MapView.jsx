@@ -95,7 +95,14 @@ function userColor(id) {
   return USER_COLORS[Math.abs(h) % USER_COLORS.length]
 }
 
-function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, testSimActive, onToggleTestSim }) {
+function isOwnStaleRecord(row) {
+  if (row.device_id === getDeviceId()) return true
+  const myName = getDeviceName()
+  if (myName && row.name === myName) return true
+  return false
+}
+
+function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, /* testSimActive, onToggleTestSim */ }) {
   const mapRef = useRef(null)
   const [userPos, setUserPos] = useState(null)
   const [geoStatus, setGeoStatus] = useState('idle')
@@ -257,48 +264,56 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   }, [routeCoords, stops])
 
   useEffect(() => {
-    if (!isSharing || !userPos || !supabaseUrl || !supabaseKey) {
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!isSharing || !userPos || !sb) {
+      if (sb) sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
       if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
       return
     }
+    sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
     const send = async () => {
-      const sb = getSupabase(supabaseUrl, supabaseKey)
-      if (!sb) return
       const [lat, lng] = userPos
-      const heading = isSharing ? 0 : 0
       await sb.from('locations').upsert({
         device_id: getDeviceId(),
         name: getDeviceName() || getDeviceId().slice(0, 8),
-        lat, lng, heading,
+        lat, lng, heading: 0,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'device_id', ignoreDuplicates: false }).maybeSingle()
     }
     send()
     locationIntervalRef.current = setInterval(send, 3000)
-    return () => { if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null } }
+    return () => {
+      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
+      if (sb) sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+    }
   }, [isSharing, userPos, supabaseUrl, supabaseKey])
 
+  // cleanup stale data, then fetch remote users
   useEffect(() => {
     if (!supabaseUrl || !supabaseKey) { setRemoteUsers({}); return }
     const sb = getSupabase(supabaseUrl, supabaseKey)
     if (!sb) return
 
-    sb.from('locations').select('*')
-      .then(({ data }) => {
-        if (data) {
-          const map = {}
-          data.forEach(row => { if (row.device_id !== getDeviceId()) map[row.device_id] = row })
-          setRemoteUsers(map)
-        }
-      })
-      .catch(() => {})
+    const cutoff = new Date(Date.now() - 10000).toISOString()
+    sb.from('locations').delete().lt('updated_at', cutoff).then(({ error }) => {
+      if (error) console.error('Cleanup delete error:', error)
+      sb.from('locations').select('*')
+        .then(({ data }) => {
+          if (data) {
+            const map = {}
+            data.forEach(row => { if (!isOwnStaleRecord(row) && !row.device_id.startsWith('test-')) map[row.device_id] = row })
+            setRemoteUsers(map)
+          }
+        })
+        .catch(() => {})
+    })
 
     const channel = sb.channel('locations-remote')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'locations' },
         (payload) => {
           const row = payload.new
-          if (row.device_id === getDeviceId()) return
+          if (isOwnStaleRecord(row) || row.device_id.startsWith('test-')) return
           setRemoteUsers(prev => ({ ...prev, [row.device_id]: row }))
         }
       )
@@ -309,7 +324,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         const { data } = await sb.from('locations').select('*')
         if (data) {
           const map = {}
-          data.forEach(row => { if (row.device_id !== getDeviceId()) map[row.device_id] = row })
+          data.forEach(row => { if (!isOwnStaleRecord(row) && !row.device_id.startsWith('test-')) map[row.device_id] = row })
           setRemoteUsers(map)
         }
       } catch {}
@@ -321,52 +336,53 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     }
   }, [supabaseUrl, supabaseKey])
 
-  useEffect(() => {
-    if (!testSimActive || !supabaseUrl || !supabaseKey) {
-      if (testSimActive === false) {
-        const sb = getSupabase(supabaseUrl, supabaseKey)
-        if (sb) sb.from('locations').delete().like('device_id', 'test-%').then(() => {})
-      }
-      return
-    }
-
-    const vehicles = [
-      { name: 'Taxi 1', waypoints: [{ lng: -77.033, lat: -12.120 }, { lng: -77.030, lat: -12.118 }, { lng: -77.029, lat: -12.114 }, { lng: -77.030, lat: -12.110 }, { lng: -77.033, lat: -12.108 }, { lng: -77.036, lat: -12.110 }, { lng: -77.035, lat: -12.115 }, { lng: -77.033, lat: -12.120 }] },
-      { name: 'Bus 2', waypoints: [{ lng: -77.038, lat: -12.112 }, { lng: -77.036, lat: -12.109 }, { lng: -77.034, lat: -12.105 }, { lng: -77.032, lat: -12.100 }, { lng: -77.029, lat: -12.098 }, { lng: -77.026, lat: -12.098 }, { lng: -77.028, lat: -12.102 }, { lng: -77.031, lat: -12.104 }, { lng: -77.034, lat: -12.108 }, { lng: -77.036, lat: -12.112 }] },
-      { name: 'Moto 3', waypoints: [{ lng: -77.033, lat: -12.118 }, { lng: -77.032, lat: -12.117 }, { lng: -77.030, lat: -12.117 }, { lng: -77.029, lat: -12.118 }, { lng: -77.030, lat: -12.119 }, { lng: -77.032, lat: -12.119 }] },
-      { name: 'Camioneta 4', waypoints: [{ lng: -77.036, lat: -12.121 }, { lng: -77.039, lat: -12.120 }, { lng: -77.041, lat: -12.119 }, { lng: -77.043, lat: -12.118 }, { lng: -77.041, lat: -12.117 }, { lng: -77.038, lat: -12.118 }, { lng: -77.036, lat: -12.120 }] },
-      { name: 'Scooter 5', waypoints: [{ lng: -77.029, lat: -12.116 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.110 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.116 }] },
-    ]
-
-    const routes = vehicles.map(v => ({ ...v, route: interpolateRoute(v.waypoints, 200) }))
-    const state = routes.map(() => ({ idx: 0 }))
-    const deviceIds = vehicles.map(v => 'test-' + v.name.toLowerCase().replace(' ', ''))
-
-    const sb = getSupabase(supabaseUrl, supabaseKey)
-    if (!sb) return
-
-    const tick = async () => {
-      for (let i = 0; i < vehicles.length; i++) {
-        const route = routes[i].route
-        state[i].idx = (state[i].idx + 1) % route.length
-        const [lng, lat] = route[state[i].idx]
-        const prev = route[state[i].idx === 0 ? route.length - 1 : state[i].idx - 1]
-        const heading = calcHeading(prev[1], prev[0], lat, lng)
-        try {
-          await sb.from('locations').upsert({
-            device_id: deviceIds[i],
-            name: vehicles[i].name,
-            lat, lng, heading,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'device_id', ignoreDuplicates: false })
-        } catch {}
-      }
-    }
-
-    tick()
-    const interval = setInterval(tick, 3000)
-    return () => clearInterval(interval)
-  }, [testSimActive, supabaseUrl, supabaseKey])
+  // test-sim commented out
+  // useEffect(() => {
+  //   if (!testSimActive || !supabaseUrl || !supabaseKey) {
+  //     if (testSimActive === false) {
+  //       const sb = getSupabase(supabaseUrl, supabaseKey)
+  //       if (sb) sb.from('locations').delete().like('device_id', 'test-%').then(() => {})
+  //     }
+  //     return
+  //   }
+  //
+  //   const vehicles = [
+  //     { name: 'Taxi 1', waypoints: [{ lng: -77.033, lat: -12.120 }, { lng: -77.030, lat: -12.118 }, { lng: -77.029, lat: -12.114 }, { lng: -77.030, lat: -12.110 }, { lng: -77.033, lat: -12.108 }, { lng: -77.036, lat: -12.110 }, { lng: -77.035, lat: -12.115 }, { lng: -77.033, lat: -12.120 }] },
+  //     { name: 'Bus 2', waypoints: [{ lng: -77.038, lat: -12.112 }, { lng: -77.036, lat: -12.109 }, { lng: -77.034, lat: -12.105 }, { lng: -77.032, lat: -12.100 }, { lng: -77.029, lat: -12.098 }, { lng: -77.026, lat: -12.098 }, { lng: -77.028, lat: -12.102 }, { lng: -77.031, lat: -12.104 }, { lng: -77.034, lat: -12.108 }, { lng: -77.036, lat: -12.112 }] },
+  //     { name: 'Moto 3', waypoints: [{ lng: -77.033, lat: -12.118 }, { lng: -77.032, lat: -12.117 }, { lng: -77.030, lat: -12.117 }, { lng: -77.029, lat: -12.118 }, { lng: -77.030, lat: -12.119 }, { lng: -77.032, lat: -12.119 }] },
+  //     { name: 'Camioneta 4', waypoints: [{ lng: -77.036, lat: -12.121 }, { lng: -77.039, lat: -12.120 }, { lng: -77.041, lat: -12.119 }, { lng: -77.043, lat: -12.118 }, { lng: -77.041, lat: -12.117 }, { lng: -77.038, lat: -12.118 }, { lng: -77.036, lat: -12.120 }] },
+  //     { name: 'Scooter 5', waypoints: [{ lng: -77.029, lat: -12.116 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.110 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.116 }] },
+  //   ]
+  //
+  //   const routes = vehicles.map(v => ({ ...v, route: interpolateRoute(v.waypoints, 200) }))
+  //   const state = routes.map(() => ({ idx: 0 }))
+  //   const deviceIds = vehicles.map(v => 'test-' + v.name.toLowerCase().replace(' ', ''))
+  //
+  //   const sb = getSupabase(supabaseUrl, supabaseKey)
+  //   if (!sb) return
+  //
+  //   const tick = async () => {
+  //     for (let i = 0; i < vehicles.length; i++) {
+  //       const route = routes[i].route
+  //       state[i].idx = (state[i].idx + 1) % route.length
+  //       const [lng, lat] = route[state[i].idx]
+  //       const prev = route[state[i].idx === 0 ? route.length - 1 : state[i].idx - 1]
+  //       const heading = calcHeading(prev[1], prev[0], lat, lng)
+  //       try {
+  //         await sb.from('locations').upsert({
+  //           device_id: deviceIds[i],
+  //           name: vehicles[i].name,
+  //           lat, lng, heading,
+  //           updated_at: new Date().toISOString(),
+  //         }, { onConflict: 'device_id', ignoreDuplicates: false })
+  //       } catch {}
+  //     }
+  //   }
+  //
+  //   tick()
+  //   const interval = setInterval(tick, 3000)
+  //   return () => clearInterval(interval)
+  // }, [testSimActive, supabaseUrl, supabaseKey])
 
   const handleToggleRace = () => {
     if (isRaceActive) {
@@ -453,7 +469,10 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   }
 
   const visibleUsers = Object.entries(remoteUsers).filter(([id, u]) => {
-    if (id === getDeviceId()) return false
+    if (id.startsWith('test-')) return false
+    if (isOwnStaleRecord(u)) return false
+    const age = Date.now() - new Date(u.updated_at).getTime()
+    if (age > 20000) return false
     if (isAdmin) return true
     if (!userPos) return false
     return haversineDist(userPos[0], userPos[1], u.lat, u.lng) <= 100
@@ -467,6 +486,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         initialViewState={initialView}
         style={{ width: '100%', height: '100dvh' }}
         attributionControl={false}
+        maxZoom={19}
         onClick={handleMapClick}
         onMouseMove={handleMapMove}
       >

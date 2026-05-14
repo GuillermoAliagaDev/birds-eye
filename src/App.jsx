@@ -34,7 +34,7 @@ function App() {
   const [activeRouteId, setActiveRouteId] = useState(null)
   const [stops, setStops] = useState([])
   const [isAddingStop, setIsAddingStop] = useState(false)
-  const [testSimActive, setTestSimActive] = useState(false)
+  // const [testSimActive, setTestSimActive] = useState(false)
 
   const stopsRef = useRef(stops)
   stopsRef.current = stops
@@ -173,8 +173,6 @@ function App() {
         setIsSharing={setIsSharing}
         isAdmin={isAdmin}
         supabaseStatus={supabaseStatus}
-        testSimActive={testSimActive}
-        onToggleTestSim={() => setTestSimActive(v => !v)}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -192,8 +190,6 @@ function App() {
         isAdmin={isAdmin}
         setIsAdmin={handleSetIsAdmin}
         supabaseStatus={supabaseStatus}
-        testSimActive={testSimActive}
-        onToggleTestSim={() => setTestSimActive(v => !v)}
         routes={routes}
         activeRouteId={activeRouteId}
         onSelectRoute={handleSelectRoute}
