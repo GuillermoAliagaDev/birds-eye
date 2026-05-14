@@ -62,3 +62,5 @@ CREATE POLICY "Allow anonymous update" ON locations FOR UPDATE TO anon USING (tr
 CREATE POLICY "Allow anonymous select" ON locations FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anonymous select routes" ON routes FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anonymous insert routes" ON routes FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anonymous update routes" ON routes FOR UPDATE TO anon USING (true);
+CREATE POLICY "Allow anonymous delete routes" ON routes FOR DELETE TO anon USING (true);

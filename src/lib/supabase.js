@@ -4,11 +4,16 @@ let cachedClient = null
 let cachedUrl = ''
 let cachedKey = ''
 
+export function normalizeUrl(url) {
+  return url.replace(/\/rest\/v1\/?$/, '').replace(/\|$/, '').replace(/\/+$/, '')
+}
+
 export function getSupabase(url, key) {
-  if (!url || !key) return null
-  if (!cachedClient || cachedUrl !== url || cachedKey !== key) {
-    cachedClient = createClient(url, key)
-    cachedUrl = url
+  const cleanUrl = normalizeUrl(url)
+  if (!cleanUrl || !key) return null
+  if (!cachedClient || cachedUrl !== cleanUrl || cachedKey !== key) {
+    cachedClient = createClient(cleanUrl, key)
+    cachedUrl = cleanUrl
     cachedKey = key
   }
   return cachedClient

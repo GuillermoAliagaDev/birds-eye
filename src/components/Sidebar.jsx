@@ -1,31 +1,25 @@
 import { useState, useEffect } from 'react'
-import { X, Menu, MapPin, Settings, Plus, Trash2, RotateCcw, Map, Save, Wifi, WifiOff } from 'lucide-react'
-import { getDeviceId, getDeviceName, setDeviceName } from '../lib/supabase'
+import { X, Menu, MapPin, Settings, Plus, Trash2, Save, Wifi, WifiOff, Route, LogIn, BugPlay } from 'lucide-react'
+import { getSupabase, getDeviceId, getDeviceName, setDeviceName } from '../lib/supabase'
 
 const menuItems = [
-  { icon: Map, label: 'Mapa' },
-  { icon: MapPin, label: 'Puntos' },
+  { icon: Route, label: 'Rutas' },
   { icon: Settings, label: 'Ajustes' },
 ]
 
-function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingStop, defaultStops, supabaseUrl, setSupabaseUrl, supabaseKey, setSupabaseKey, isSharing, setIsSharing, saveRoute }) {
-  const [activeItem, setActiveItem] = useState(1)
+function Sidebar({
+  isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingStop,
+  supabaseUrl, setSupabaseUrl, supabaseKey, setSupabaseKey,
+  isSharing, setIsSharing, isAdmin, setIsAdmin, supabaseStatus,
+  testSimActive, onToggleTestSim,
+  routes, activeRouteId, onSelectRoute, onCreateRoute, onSaveRoute, onDeleteRoute,
+}) {
+  const [activeItem, setActiveItem] = useState(0)
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [isOpen])
-
-  const updateName = (idx, name) => {
-    setStops(prev => prev.map((s, i) => i === idx ? { ...s, name } : s))
-  }
-
-  const deleteStop = (idx) => {
-    setStops(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  const clearAll = () => setStops([])
-  const restoreDefault = () => setStops(defaultStops)
 
   return (
     <>
@@ -70,85 +64,125 @@ function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingS
 
         <div className="flex-1 overflow-y-auto">
           {activeItem === 0 && (
-            <div className="p-6 text-gray-500 text-xs text-center">Configuración del mapa</div>
-          )}
-
-          {activeItem === 1 && (
             <div className="p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-white/80">
-                  Puntos de ruta <span className="text-blue-400">({stops.length})</span>
+                  Rutas <span className="text-blue-400">({routes.length})</span>
                 </span>
               </div>
 
-              <button
-                onClick={() => setIsAddingStop(!isAddingStop)}
-                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs transition-all ${isAddingStop
-                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-white/5'
-                  }`}
-              >
-                <Plus size={14} />
-                {isAddingStop ? 'Haz clic en el mapa...' : 'Agregar punto'}
-              </button>
+              {isAdmin && (
+                <button onClick={onCreateRoute}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 transition-all"
+                >
+                  <Plus size={14} />
+                  Nueva ruta
+                </button>
+              )}
 
-              {stops.length === 0 && (
+              {routes.length === 0 && (
                 <div className="py-8 text-gray-600 text-xs text-center">
-                  No hay puntos. Agrega uno haciendo clic en el mapa.
+                  {isAdmin ? 'Crea una nueva ruta.' : 'Espera a que el admin agregue una.'}
                 </div>
               )}
 
-              <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
-                {stops.map((s, i) => (
-                  <div key={i} className="group flex items-center gap-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
-                    <span className="w-6 h-6 rounded-full bg-blue-500/15 text-blue-400 text-[11px] flex items-center justify-center font-bold shrink-0">
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <input
-                        value={s.name}
-                        onChange={(e) => updateName(i, e.target.value)}
-                        className="w-full bg-transparent text-white text-xs border-b border-transparent focus:border-blue-500/50 outline-none px-1 py-0.5"
-                        placeholder="Nombre del punto"
-                      />
-                      <div className="text-[9px] text-gray-600 font-mono px-1">
-                        {s.lat.toFixed(5)}, {s.lng.toFixed(5)}
-                      </div>
+              <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+                {routes.map(route => {
+                  const isActive = route.id === activeRouteId
+                  return (
+                    <div key={route.id} className={`rounded-lg transition-colors ${isActive ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-white/[0.03] border border-transparent'}`}>
+                      <button
+                        onClick={() => onSelectRoute(route.id)}
+                        className="w-full flex items-center gap-2 p-2.5"
+                      >
+                        <Route size={14} className={`shrink-0 ${isActive ? 'text-blue-400' : 'text-gray-500'}`} />
+                        <div className="flex-1 text-left min-w-0">
+                          <div className="text-xs text-white truncate">{route.name}</div>
+                          <div className="text-[10px] text-gray-500">{route.stops?.length || 0} paradas</div>
+                        </div>
+                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
+                      </button>
+
+                      {isActive && (
+                        <div className="px-2 pb-2 border-t border-blue-500/10 pt-2">
+                          {stops.length > 0 && (
+                            <div className="space-y-0.5 max-h-[30vh] overflow-y-auto mb-2">
+                              {stops.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1.5 py-1 rounded hover:bg-white/[0.03] group">
+                                  <span className="w-5 h-5 rounded-full bg-blue-500/15 text-blue-400 text-[10px] flex items-center justify-center font-bold shrink-0">
+                                    {i + 1}
+                                  </span>
+                                  {isAdmin ? (
+                                    <input value={s.name} onChange={e => {
+                                      const copy = [...stops]
+                                      copy[i] = { ...copy[i], name: e.target.value }
+                                      setStops(copy)
+                                    }}
+                                      className="flex-1 bg-transparent text-white text-[11px] border-b border-transparent focus:border-blue-500/50 outline-none px-1 py-0.5"
+                                      placeholder="Nombre de la parada"
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] text-white/80 truncate">{s.name}</span>
+                                  )}
+                                  {isAdmin && (
+                                    <button onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}
+                                      className="p-1 text-red-400/40 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                                    >
+                                      <Trash2 size={10} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {stops.length === 0 && (
+                            <div className="text-[10px] text-gray-600 text-center py-2">Ruta sin paradas</div>
+                          )}
+
+                          {isAdmin && (
+                            <div className="flex flex-col gap-1.5 pt-1">
+                              <button onClick={() => setIsAddingStop(true)}
+                                className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs transition-all border ${
+                                  isAddingStop
+                                    ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border-white/5'
+                                }`}
+                              >
+                                <Plus size={12} />
+                                {isAddingStop ? 'Haz clic en el mapa...' : 'Agregar parada'}
+                              </button>
+                              <div className="flex gap-2">
+                                <button onClick={onSaveRoute}
+                                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30 transition-all"
+                                >
+                                  <Save size={12} />
+                                  Guardar
+                                </button>
+                                <button onClick={() => onDeleteRoute(route.id)}
+                                  className="p-1.5 rounded-lg text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all"
+                                  title="Eliminar ruta"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={() => deleteStop(i)}
-                      className="p-1.5 text-red-400/40 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-
-              {stops.length > 0 && (
-                <div className="flex gap-2 pt-1">
-                  <button onClick={restoreDefault}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white transition-all"
-                  >
-                    <RotateCcw size={12} />
-                    Restaurar demo
-                  </button>
-                  <button onClick={clearAll}
-                    className="flex-1 py-2 rounded-lg text-[11px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                  >
-                    Limpiar todo
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
-          {activeItem === 2 && (
+          {activeItem === 1 && (
             <div className="p-3 space-y-4">
               <div className="text-xs font-semibold text-white/80">Conexión Supabase</div>
 
               <input value={supabaseUrl} onChange={e => setSupabaseUrl(e.target.value)}
-                placeholder="URL del proyecto (ej: https://xxx.supabase.co)"
+                placeholder="URL del proyecto"
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
               />
               <input value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)}
@@ -157,15 +191,26 @@ function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingS
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
               />
 
-              {supabaseUrl && supabaseKey && (
+              <div className="flex items-center gap-2 text-[10px]">
+                {supabaseStatus === 'idle' && <span className="text-gray-500">Sin configurar</span>}
+                {supabaseStatus === 'checking' && <>
+                  <div className="w-2 h-2 border border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-blue-400">Verificando...</span>
+                </>}
+                {supabaseStatus === 'connected' && <>
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  <span className="text-green-400">Conectado</span>
+                </>}
+                {supabaseStatus === 'error' && <>
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  <span className="text-red-400">Error de conexión</span>
+                </>}
+              </div>
+
+              {supabaseUrl && supabaseKey && supabaseStatus === 'connected' && (
                 <>
                   <div className="border-t border-white/5 pt-4 space-y-3">
                     <div className="text-xs font-semibold text-white/80">Compartir ubicación</div>
-
-                    <input defaultValue={getDeviceName()} onChange={e => setDeviceName(e.target.value)}
-                      placeholder="Tu nombre (opcional)"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
-                    />
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -179,30 +224,49 @@ function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingS
                       </button>
                     </div>
 
+                    <input defaultValue={getDeviceName()} onChange={e => setDeviceName(e.target.value)}
+                      placeholder="Tu nombre"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+                    />
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <LogIn size={14} className={isAdmin ? 'text-yellow-400' : 'text-gray-500'} />
+                        <span className="text-xs text-white/80">Admin</span>
+                      </div>
+                      <button onClick={() => setIsAdmin(!isAdmin)}
+                        className={`relative w-10 h-5 rounded-full transition-all ${isAdmin ? 'bg-yellow-500' : 'bg-white/10'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isAdmin ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+
                     <div className="text-[10px] text-gray-500 font-mono truncate">
                       ID: {getDeviceId().slice(0, 12)}…
                     </div>
 
-                    <div className="border-t border-white/5 pt-3">
-                      <div className="text-xs font-semibold text-white/80 mb-2">Ruta</div>
-                      <button onClick={saveRoute}
-                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30 transition-all"
-                      >
-                        <Save size={12} />
-                        Guardar ruta en Supabase
-                      </button>
-                      <p className="text-[10px] text-gray-600 mt-1">
-                        Todos los dispositivos conectados verán esta ruta.
-                      </p>
-                    </div>
+                    {isAdmin && (
+                      <>
+                        <button onClick={onToggleTestSim}
+                          className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs border transition-all ${
+                            testSimActive
+                              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/30'
+                              : 'bg-green-500/20 text-green-400 hover:bg-green-500/30 border-green-500/30'
+                          }`}
+                        >
+                          <BugPlay size={12} />
+                          {testSimActive ? 'Detener simulación' : 'Simular tráfico'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </>
               )}
 
               {!supabaseUrl && (
                 <div className="text-[10px] text-gray-500 leading-relaxed">
-                  Ingresa las credenciales de tu proyecto Supabase para compartir ubicación en tiempo real.
-                  {' '}Revisa el archivo <code className="text-blue-400">supabase-schema.sql</code> para crear las tablas necesarias.
+                  Ingresa las credenciales de tu proyecto Supabase para comenzar.
+                  Revisa el archivo <code className="text-blue-400">supabase-schema.sql</code> para crear las tablas.
                 </div>
               )}
             </div>
@@ -210,7 +274,7 @@ function Sidebar({ isOpen, onToggle, stops, setStops, isAddingStop, setIsAddingS
         </div>
 
         <div className="p-3 border-t border-white/10 text-[10px] text-gray-600 text-center">
-          {stops.length} puntos · Simulación con OSRM
+          {routes.length} rutas · {isAdmin ? 'Admin' : 'Visor'}
         </div>
       </aside>
 

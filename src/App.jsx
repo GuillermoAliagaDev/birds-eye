@@ -1,79 +1,162 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
-import { getSupabase } from './lib/supabase'
-
-const defaultStops = [
-  { name: 'Partida: Av. 28 de Julio 1014',             lng: -77.0315, lat: -12.1202 },
-  { name: 'NW Av. 28 de Julio → Av. José Larco',       lng: -77.0299, lat: -12.1178 },
-  { name: 'Av. José Larco → Av. Arequipa',             lng: -77.0298, lat: -12.1120 },
-  { name: 'Av. Arequipa (keep left)',                  lng: -77.0320, lat: -12.1070 },
-  { name: 'Av. Arequipa → Jirón Torre Ugarte',         lng: -77.0310, lat: -12.1015 },
-  { name: 'Av. César Vallejo / Álvarez de Arenales',   lng: -77.0330, lat: -12.0985 },
-  { name: 'Av. Jorge Basadre → Av. Camino Real',       lng: -77.0300, lat: -12.0955 },
-  { name: 'Av. Camino Real → Av. Emilio Cavenecia',    lng: -77.0265, lat: -12.0955 },
-  { name: 'Av. Los Conquistadores',                    lng: -77.0240, lat: -12.0990 },
-  { name: 'C. La República → Sta. Cruz',               lng: -77.0250, lat: -12.1040 },
-  { name: 'Av. Angamos Oeste',                         lng: -77.0260, lat: -12.1055 },
-  { name: 'Av. Angamos Este → Gral. Suárez',           lng: -77.0300, lat: -12.1045 },
-  { name: 'Av. Petit Thouars (N)',                     lng: -77.0335, lat: -12.1010 },
-  { name: 'Av. Javier Prado Este',                     lng: -77.0355, lat: -12.0985 },
-  { name: 'Av. Ricardo Rivera → Juan de Arona',        lng: -77.0325, lat: -12.0950 },
-  { name: 'Av. República de Colombia',                 lng: -77.0295, lat: -12.0935 },
-  { name: 'Av. Paseo de la República → Vía Expresa',   lng: -77.0340, lat: -12.0980 },
-  { name: 'Vía Expresa (S)',                           lng: -77.0365, lat: -12.1050 },
-  { name: 'Exit Benavides',                            lng: -77.0365, lat: -12.1095 },
-  { name: 'Av. Alfredo Benavides',                     lng: -77.0345, lat: -12.1160 },
-  { name: 'Ca. San Martín → Av. Reducto',              lng: -77.0320, lat: -12.1185 },
-  { name: 'Av. Armendáriz',                            lng: -77.0295, lat: -12.1200 },
-  { name: 'Av. José Larco (return)',                   lng: -77.0285, lat: -12.1185 },
-  { name: 'Av. Reducto → Av. 28 de Julio',             lng: -77.0310, lat: -12.1190 },
-  { name: 'Av. 28 de Julio 1014 — Llegada',            lng: -77.0305, lat: -12.1195 },
-]
+import { getSupabase, normalizeUrl } from './lib/supabase'
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [recenterTrigger, setRecenterTrigger] = useState(0)
-  const [stops, setStops] = useState(defaultStops)
-  const [isAddingStop, setIsAddingStop] = useState(false)
-  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('supabase_url') || '')
-  const [supabaseKey, setSupabaseKey] = useState(() => localStorage.getItem('supabase_anon_key') || '')
+  const [supabaseUrl, setSupabaseUrl] = useState(() => {
+    const stored = localStorage.getItem('supabase_url')
+    if (stored) return normalizeUrl(stored)
+    const envUrl = import.meta.env.VITE_SUPABASE_URL
+    if (envUrl) { localStorage.setItem('supabase_url', normalizeUrl(envUrl)); return normalizeUrl(envUrl) }
+    return ''
+  })
+  const [supabaseKey, setSupabaseKey] = useState(() => {
+    const stored = localStorage.getItem('supabase_anon_key')
+    if (stored) return stored
+    const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (envKey) { localStorage.setItem('supabase_anon_key', envKey); return envKey }
+    return ''
+  })
+  const [isAdmin, setIsAdmin] = useState(() => {
+    const stored = localStorage.getItem('is_admin')
+    if (stored === 'true' || stored === 'false') return stored === 'true'
+    if (import.meta.env.VITE_IS_ADMIN === 'true') { localStorage.setItem('is_admin', 'true'); return true }
+    return false
+  })
   const [isSharing, setIsSharing] = useState(false)
+  const [supabaseStatus, setSupabaseStatus] = useState('idle')
+
+  const [routes, setRoutes] = useState([])
+  const [activeRouteId, setActiveRouteId] = useState(null)
+  const [stops, setStops] = useState([])
+  const [isAddingStop, setIsAddingStop] = useState(false)
+  const [testSimActive, setTestSimActive] = useState(false)
+
+  const stopsRef = useRef(stops)
+  stopsRef.current = stops
+  const autoSharedRef = useRef(false)
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey) { setSupabaseStatus('idle'); return }
+    setSupabaseStatus('checking')
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) { setSupabaseStatus('error'); return }
+    sb.from('locations').select('count', { count: 'exact', head: true })
+      .then(({ error }) => setSupabaseStatus(error ? 'error' : 'connected'))
+      .catch(() => setSupabaseStatus('error'))
+  }, [supabaseUrl, supabaseKey])
+
+  useEffect(() => {
+    if (isAdmin && supabaseStatus === 'connected' && !autoSharedRef.current) {
+      autoSharedRef.current = true
+      setIsSharing(true)
+    }
+    if (!isAdmin || supabaseStatus !== 'connected') {
+      autoSharedRef.current = false
+    }
+  }, [isAdmin, supabaseStatus])
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey || supabaseStatus !== 'connected') return
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+
+    sb.from('routes').select('*').order('id', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error && data?.length > 0) { setRoutes(data); return }
+        sb.from('routes').insert({
+          name: 'Ruta principal',
+          stops: [
+            { name: 'Av. 28 de Julio 1014', lng: -77.0315, lat: -12.1202 },
+            { name: 'Av. José Larco', lng: -77.0298, lat: -12.1120 },
+            { name: 'Av. Arequipa', lng: -77.0320, lat: -12.1070 },
+            { name: 'Av. Javier Prado', lng: -77.0355, lat: -12.0985 },
+            { name: 'Vía Expresa', lng: -77.0365, lat: -12.1050 },
+            { name: 'Av. Benavides', lng: -77.0345, lat: -12.1160 },
+            { name: 'Av. 28 de Julio 1014 — Llegada', lng: -77.0305, lat: -12.1195 },
+          ],
+        }).select().single().then(({ data: d2 }) => { if (d2) setRoutes([d2]) })
+      })
+
+    const channel = sb.channel('routes-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'routes' },
+        (payload) => {
+          setRoutes(prev => {
+            if (payload.eventType === 'INSERT') return [payload.new, ...prev]
+            if (payload.eventType === 'UPDATE') return prev.map(r => r.id === payload.new.id ? payload.new : r)
+            if (payload.eventType === 'DELETE') return prev.filter(r => r.id !== payload.old.id)
+            return prev
+          })
+        }
+      )
+      .subscribe()
+
+    return () => { sb.removeChannel(channel) }
+  }, [supabaseUrl, supabaseKey])
+
+  useEffect(() => {
+    if (!isAdmin && activeRouteId) {
+      const route = routes.find(r => r.id === activeRouteId)
+      if (route && JSON.stringify(route.stops) !== JSON.stringify(stopsRef.current)) {
+        setStops(route.stops)
+      }
+    }
+  }, [routes, activeRouteId, isAdmin])
+
+  const handleSetIsAdmin = useCallback((v) => {
+    setIsAdmin(v)
+    localStorage.setItem('is_admin', v)
+  }, [])
+
+  const handleSelectRoute = useCallback((routeId) => {
+    setActiveRouteId(routeId)
+    const route = routes.find(r => r.id === routeId)
+    if (route) setStops(route.stops)
+    setIsAddingStop(false)
+  }, [routes])
+
+  const handleCreateRoute = useCallback(async () => {
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+    const { data } = await sb.from('routes').insert({ name: 'Nueva ruta', stops: [] }).select().single()
+    if (data) {
+      setRoutes(prev => [data, ...prev])
+      setActiveRouteId(data.id)
+      setStops([])
+    }
+  }, [supabaseUrl, supabaseKey])
+
+  const handleSaveRoute = useCallback(async () => {
+    if (!activeRouteId) return
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+    const { data } = await sb.from('routes').update({
+      stops, updated_at: new Date().toISOString(),
+    }).eq('id', activeRouteId).select().single()
+    if (data) setRoutes(prev => prev.map(r => r.id === data.id ? data : r))
+  }, [supabaseUrl, supabaseKey, activeRouteId, stops])
+
+  const handleDeleteRoute = useCallback(async (routeId) => {
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+    await sb.from('routes').delete().eq('id', routeId)
+    setRoutes(prev => prev.filter(r => r.id !== routeId))
+    if (activeRouteId === routeId) { setActiveRouteId(null); setStops([]) }
+  }, [supabaseUrl, supabaseKey, activeRouteId])
 
   const handleSetSupabaseUrl = useCallback((url) => {
-    setSupabaseUrl(url)
-    localStorage.setItem('supabase_url', url)
+    const clean = normalizeUrl(url)
+    setSupabaseUrl(clean); localStorage.setItem('supabase_url', clean)
   }, [])
 
   const handleSetSupabaseKey = useCallback((key) => {
-    setSupabaseKey(key)
-    localStorage.setItem('supabase_anon_key', key)
+    setSupabaseKey(key); localStorage.setItem('supabase_anon_key', key)
   }, [])
-
-  useEffect(() => {
-    if (!supabaseUrl || !supabaseKey) return
-    const sb = getSupabase(supabaseUrl, supabaseKey)
-    if (!sb) return
-    sb.from('routes').select('*').order('id', { ascending: false }).limit(1)
-      .then(({ data }) => {
-        if (data?.length > 0 && data[0].stops?.length > 1) {
-          setStops(data[0].stops)
-        }
-      })
-      .catch(() => {})
-  }, [supabaseUrl, supabaseKey])
-
-  const saveRoute = useCallback(async () => {
-    const sb = getSupabase(supabaseUrl, supabaseKey)
-    if (!sb) return
-    const { error } = await sb.from('routes').insert({ stops, name: 'Ruta principal' })
-    if (!error) {
-      const updated = [...stops]
-      updated[updated.length - 1] = { ...updated[updated.length - 1], name: updated[updated.length - 1].name + ' ✓' }
-      setTimeout(() => setStops(updated), 100)
-    }
-  }, [supabaseUrl, supabaseKey, stops])
 
   return (
     <div className="relative w-full h-dvh">
@@ -88,6 +171,10 @@ function App() {
         supabaseKey={supabaseKey}
         isSharing={isSharing}
         setIsSharing={setIsSharing}
+        isAdmin={isAdmin}
+        supabaseStatus={supabaseStatus}
+        testSimActive={testSimActive}
+        onToggleTestSim={() => setTestSimActive(v => !v)}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -96,14 +183,23 @@ function App() {
         setStops={setStops}
         isAddingStop={isAddingStop}
         setIsAddingStop={setIsAddingStop}
-        defaultStops={defaultStops}
         supabaseUrl={supabaseUrl}
         setSupabaseUrl={handleSetSupabaseUrl}
         supabaseKey={supabaseKey}
         setSupabaseKey={handleSetSupabaseKey}
         isSharing={isSharing}
         setIsSharing={setIsSharing}
-        saveRoute={saveRoute}
+        isAdmin={isAdmin}
+        setIsAdmin={handleSetIsAdmin}
+        supabaseStatus={supabaseStatus}
+        testSimActive={testSimActive}
+        onToggleTestSim={() => setTestSimActive(v => !v)}
+        routes={routes}
+        activeRouteId={activeRouteId}
+        onSelectRoute={handleSelectRoute}
+        onCreateRoute={handleCreateRoute}
+        onSaveRoute={handleSaveRoute}
+        onDeleteRoute={handleDeleteRoute}
       />
       <QuickActionButton onClick={() => setRecenterTrigger(t => t + 1)} />
     </div>

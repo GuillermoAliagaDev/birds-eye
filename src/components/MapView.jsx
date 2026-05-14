@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Map, { Marker, NavigationControl, Source, Layer } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Flag, LocateOff, Navigation, Smartphone } from 'lucide-react'
+import { Flag, LocateOff } from 'lucide-react'
 import { getSupabase, getDeviceId, getDeviceName } from '../lib/supabase'
 
 const osmStyle = {
@@ -79,7 +79,23 @@ function interpolateRoute(wpts, segments = 600) {
   return result
 }
 
-function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing }) {
+function haversineDist(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+const USER_COLORS = ['#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6', '#F97316', '#06B6D4', '#84CC16']
+
+function userColor(id) {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h) + id.charCodeAt(i)
+  return USER_COLORS[Math.abs(h) % USER_COLORS.length]
+}
+
+function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, testSimActive, onToggleTestSim }) {
   const mapRef = useRef(null)
   const [userPos, setUserPos] = useState(null)
   const [geoStatus, setGeoStatus] = useState('idle')
@@ -105,12 +121,26 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   const [fullPreviewLoading, setFullPreviewLoading] = useState(false)
   const [remoteUsers, setRemoteUsers] = useState({})
   const locationIntervalRef = useRef(null)
+  const routeCoordsKeyRef = useRef('')
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas()
     if (canvas) canvas.style.cursor = isAddingStop ? 'crosshair' : ''
     if (!isAddingStop) { setHoverPos(null); setPreviewRoute(null); setPreviewLoading(false) }
   }, [isAddingStop])
+
+  useEffect(() => {
+    const key = stops.map(s => `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`).join('|')
+    if (key === routeCoordsKeyRef.current || stops.length < 2 || !mapRef.current) return
+    routeCoordsKeyRef.current = key
+    const minLng = Math.min(...stops.map(s => s.lng))
+    const maxLng = Math.max(...stops.map(s => s.lng))
+    const minLat = Math.min(...stops.map(s => s.lat))
+    const maxLat = Math.max(...stops.map(s => s.lat))
+    mapRef.current.fitBounds([[minLng - 0.002, minLat - 0.002], [maxLng + 0.002, maxLat + 0.002]], {
+      padding: 80, maxZoom: 15, duration: 1200,
+    })
+  }, [stops])
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) { setGeoStatus('unsupported'); return }
@@ -274,17 +304,69 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       )
       .subscribe()
 
-    const cleanup = setInterval(() => {
-      sb.from('locations').select('*').limit(1).catch(() => {
-        setRemoteUsers({})
-      })
-    }, 30000)
+    const pollTimer = setInterval(async () => {
+      try {
+        const { data } = await sb.from('locations').select('*')
+        if (data) {
+          const map = {}
+          data.forEach(row => { if (row.device_id !== getDeviceId()) map[row.device_id] = row })
+          setRemoteUsers(map)
+        }
+      } catch {}
+    }, 5000)
 
     return () => {
       sb.removeChannel(channel)
-      clearInterval(cleanup)
+      clearInterval(pollTimer)
     }
   }, [supabaseUrl, supabaseKey])
+
+  useEffect(() => {
+    if (!testSimActive || !supabaseUrl || !supabaseKey) {
+      if (testSimActive === false) {
+        const sb = getSupabase(supabaseUrl, supabaseKey)
+        if (sb) sb.from('locations').delete().like('device_id', 'test-%').then(() => {})
+      }
+      return
+    }
+
+    const vehicles = [
+      { name: 'Taxi 1', waypoints: [{ lng: -77.033, lat: -12.120 }, { lng: -77.030, lat: -12.118 }, { lng: -77.029, lat: -12.114 }, { lng: -77.030, lat: -12.110 }, { lng: -77.033, lat: -12.108 }, { lng: -77.036, lat: -12.110 }, { lng: -77.035, lat: -12.115 }, { lng: -77.033, lat: -12.120 }] },
+      { name: 'Bus 2', waypoints: [{ lng: -77.038, lat: -12.112 }, { lng: -77.036, lat: -12.109 }, { lng: -77.034, lat: -12.105 }, { lng: -77.032, lat: -12.100 }, { lng: -77.029, lat: -12.098 }, { lng: -77.026, lat: -12.098 }, { lng: -77.028, lat: -12.102 }, { lng: -77.031, lat: -12.104 }, { lng: -77.034, lat: -12.108 }, { lng: -77.036, lat: -12.112 }] },
+      { name: 'Moto 3', waypoints: [{ lng: -77.033, lat: -12.118 }, { lng: -77.032, lat: -12.117 }, { lng: -77.030, lat: -12.117 }, { lng: -77.029, lat: -12.118 }, { lng: -77.030, lat: -12.119 }, { lng: -77.032, lat: -12.119 }] },
+      { name: 'Camioneta 4', waypoints: [{ lng: -77.036, lat: -12.121 }, { lng: -77.039, lat: -12.120 }, { lng: -77.041, lat: -12.119 }, { lng: -77.043, lat: -12.118 }, { lng: -77.041, lat: -12.117 }, { lng: -77.038, lat: -12.118 }, { lng: -77.036, lat: -12.120 }] },
+      { name: 'Scooter 5', waypoints: [{ lng: -77.029, lat: -12.116 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.110 }, { lng: -77.029, lat: -12.112 }, { lng: -77.029, lat: -12.114 }, { lng: -77.029, lat: -12.116 }] },
+    ]
+
+    const routes = vehicles.map(v => ({ ...v, route: interpolateRoute(v.waypoints, 200) }))
+    const state = routes.map(() => ({ idx: 0 }))
+    const deviceIds = vehicles.map(v => 'test-' + v.name.toLowerCase().replace(' ', ''))
+
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!sb) return
+
+    const tick = async () => {
+      for (let i = 0; i < vehicles.length; i++) {
+        const route = routes[i].route
+        state[i].idx = (state[i].idx + 1) % route.length
+        const [lng, lat] = route[state[i].idx]
+        const prev = route[state[i].idx === 0 ? route.length - 1 : state[i].idx - 1]
+        const heading = calcHeading(prev[1], prev[0], lat, lng)
+        try {
+          await sb.from('locations').upsert({
+            device_id: deviceIds[i],
+            name: vehicles[i].name,
+            lat, lng, heading,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'device_id', ignoreDuplicates: false })
+        } catch {}
+      }
+    }
+
+    tick()
+    const interval = setInterval(tick, 3000)
+    return () => clearInterval(interval)
+  }, [testSimActive, supabaseUrl, supabaseKey])
 
   const handleToggleRace = () => {
     if (isRaceActive) {
@@ -370,6 +452,13 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     stopIndicesRef.current.forEach((idx, i) => { if (simIdx >= idx) completedStops.add(i) })
   }
 
+  const visibleUsers = Object.entries(remoteUsers).filter(([id, u]) => {
+    if (id === getDeviceId()) return false
+    if (isAdmin) return true
+    if (!userPos) return false
+    return haversineDist(userPos[0], userPos[1], u.lat, u.lng) <= 100
+  })
+
   return (
     <>
       <Map
@@ -410,8 +499,8 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         {simLng && simLat && (
           <Marker longitude={simLng} latitude={simLat} anchor="center">
             <div className="relative animate-pulse">
-              <div className="w-6 h-6 bg-blue-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                <Navigation size={12} className="text-white" />
+              <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center">
+                <Flag size={14} className="text-white" />
               </div>
             </div>
           </Marker>
@@ -419,20 +508,24 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
 
         {!isRaceActive && userPos && (
           <Marker longitude={userPos[1]} latitude={userPos[0]} anchor="center">
-            <div className="w-5 h-5 rounded-full bg-blue-500 border-2 border-white shadow-lg" />
+            <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center">
+              <Flag size={14} className="text-white" />
+            </div>
           </Marker>
         )}
 
-        {Object.entries(remoteUsers).map(([deviceId, user]) => {
-          if (deviceId === getDeviceId()) return null
+        {visibleUsers.map(([deviceId, user]) => {
+          const color = userColor(deviceId)
           return (
             <Marker key={deviceId} longitude={user.lng} latitude={user.lat} anchor="center">
               <div className="relative group">
-                <div className="w-5 h-5 rounded-full bg-purple-500 border-2 border-white shadow-lg flex items-center justify-center">
-                  <Smartphone size={10} className="text-white" />
+                <div className="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center"
+                  style={{ backgroundColor: color }}>
+                  <Flag size={14} className="text-white" />
                 </div>
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block whitespace-nowrap z-10">
-                  <div className="bg-[#111113] text-white text-[9px] px-1.5 py-0.5 rounded border border-white/10 shadow-lg">
+                  <div className="bg-[#111113] text-white text-[9px] px-1.5 py-0.5 rounded border border-white/10 shadow-lg flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                     {user.name || deviceId.slice(0, 8)}
                   </div>
                 </div>
@@ -444,12 +537,15 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         {stops.map((s, i) => (
           <Marker key={i} longitude={s.lng} latitude={s.lat} anchor="center">
             <div className="relative group cursor-pointer">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 transition-all ${
-                completedStops.has(i) ? 'bg-green-500 text-white border-green-300'
-                  : isRaceActive ? 'bg-blue-500/80 text-white border-blue-300'
-                  : isAddingStop ? 'bg-green-500/80 text-white border-green-300'
-                  : 'bg-[#111113]/90 text-blue-400 border-blue-500/50 hover:bg-[#1f1f22]'
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg border-2 transition-all ${
+                completedStops.has(i) ? 'bg-green-500 border-green-300'
+                  : isRaceActive ? 'bg-blue-500/80 border-blue-300'
+                  : isAddingStop ? 'bg-green-500/80 border-green-300'
+                  : 'bg-[#111113]/90 border-blue-500/50 hover:bg-[#1f1f22]'
               }`}>
+                <Flag size={14} className="text-white" />
+              </div>
+              <div className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#111113] border border-white/20 flex items-center justify-center text-[9px] font-bold text-white shadow-lg">
                 {i + 1}
               </div>
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block whitespace-nowrap">
@@ -464,16 +560,16 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
         {isAddingStop && hoverPos && (
           <Marker longitude={hoverPos[0]} latitude={hoverPos[1]} anchor="center">
             <div className="relative">
-              <div className={`w-7 h-7 rounded-full border-2 border-green-400 shadow-lg flex items-center justify-center ${
+              <div className={`w-8 h-8 rounded-full border-2 border-green-400 shadow-lg flex items-center justify-center ${
                 previewLoading ? 'bg-green-400/20' : 'bg-green-400/40'
               }`}>
                 {previewLoading ? (
                   <div className="w-3 h-3 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <div className="w-2 h-2 rounded-full bg-green-400" />
+                  <Flag size={14} className="text-white" />
                 )}
               </div>
-              {!previewLoading && <div className="absolute inset-0 w-7 h-7 rounded-full bg-green-400/20 animate-ping" />}
+              {!previewLoading && <div className="absolute inset-0 w-8 h-8 rounded-full bg-green-400/20 animate-ping" />}
             </div>
           </Marker>
         )}
@@ -491,7 +587,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
               <div className="w-[18px] h-[18px] border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
-          {geoStatus === 'success' && (
+          {geoStatus === 'success' && isAdmin && (
             <button onClick={handleToggleRace}
               className={`p-2.5 rounded-xl shadow-lg border border-white/10 transition-all ${
                 isRaceActive
@@ -587,9 +683,18 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       )}
 
       {isSharing && (
-        <div className="fixed top-20 left-4 z-40 bg-green-500/20 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-green-500/30 text-[10px] text-green-400 flex items-center gap-1.5">
+        <div className="fixed top-20 left-4 z-40 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 rounded-lg border border-white/10 text-[10px] text-white/80 flex items-center gap-2 shadow-lg">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          {Object.keys(remoteUsers).length} usuarios
+          {visibleUsers.length > 0 ? (
+            <div className="flex items-center gap-1">
+              {visibleUsers.map(([id]) => (
+                <span key={id} className="w-2 h-2 rounded-full" style={{ backgroundColor: userColor(id) }} />
+              ))}
+              <span className="ml-0.5">{visibleUsers.length}</span>
+            </div>
+          ) : (
+            <span>0 usuarios</span>
+          )}
         </div>
       )}
 
