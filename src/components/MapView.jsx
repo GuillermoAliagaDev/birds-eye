@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Map, { Marker, NavigationControl, Source, Layer } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { Flag, LocateOff } from 'lucide-react'
+import { Flag, LocateOff, Shield } from 'lucide-react'
 import { getSupabase, getDeviceId, getDeviceName } from '../lib/supabase'
 
 const mapStyle = {
@@ -102,7 +102,7 @@ function isOwnStaleRecord(row) {
   return false
 }
 
-function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, /* testSimActive, onToggleTestSim */ }) {
+function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, onRemoteUsers, locateCoords, /* testSimActive, onToggleTestSim */ }) {
   const mapRef = useRef(null)
   const [userPos, setUserPos] = useState(null)
   const [geoStatus, setGeoStatus] = useState('idle')
@@ -129,6 +129,8 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   const [remoteUsers, setRemoteUsers] = useState({})
   const locationIntervalRef = useRef(null)
   const routeCoordsKeyRef = useRef('')
+
+  useEffect(() => { if (onRemoteUsers) onRemoteUsers(remoteUsers) }, [remoteUsers, onRemoteUsers])
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas()
@@ -217,6 +219,11 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   }, [userPos, isRaceActive])
 
   useEffect(() => { if (recenterTrigger > 0) recenter() }, [recenterTrigger, recenter])
+  useEffect(() => {
+    if (locateCoords && mapRef.current) {
+      mapRef.current.flyTo({ center: locateCoords, zoom: 16, duration: 1200 })
+    }
+  }, [locateCoords])
   useEffect(() => { if (rutaEndMsg) { const t = setTimeout(() => setRutaEndMsg(false), 4000); return () => clearTimeout(t) } }, [rutaEndMsg])
   useEffect(() => { if (rutaMsg) { const t = setTimeout(() => setRutaMsg(false), 3000); return () => clearTimeout(t) } }, [rutaMsg])
 
@@ -458,17 +465,20 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     }, 250)
   }, [isAddingStop, stops, fetchPreviewRoute, confirmPosition])
 
-  const routeGeoJSON = routeCoords ? {
+  const routeGeoJSON = useMemo(() => routeCoords ? {
     type: 'Feature', properties: {},
     geometry: { type: 'LineString', coordinates: isRaceActive && simIdx > 0 ? routeCoords.slice(simIdx) : routeCoords },
-  } : null
+  } : null, [routeCoords, isRaceActive, simIdx])
   const simLng = simPos ? simPos[0] : null; const simLat = simPos ? simPos[1] : null
-  const completedStops = new Set()
-  if (isRaceActive && simIdx > 0 && stopIndicesRef.current.length === stops.length) {
-    stopIndicesRef.current.forEach((idx, i) => { if (simIdx >= idx) completedStops.add(i) })
-  }
+  const completedStops = useMemo(() => {
+    const s = new Set()
+    if (isRaceActive && simIdx > 0 && stopIndicesRef.current.length === stops.length) {
+      stopIndicesRef.current.forEach((idx, i) => { if (simIdx >= idx) s.add(i) })
+    }
+    return s
+  }, [isRaceActive, simIdx, stops.length])
 
-  const visibleUsers = Object.entries(remoteUsers).filter(([id, u]) => {
+  const visibleUsers = useMemo(() => Object.entries(remoteUsers).filter(([id, u]) => {
     if (id.startsWith('test-')) return false
     if (isOwnStaleRecord(u)) return false
     const age = Date.now() - new Date(u.updated_at).getTime()
@@ -476,7 +486,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     if (isAdmin) return true
     if (!userPos) return false
     return haversineDist(userPos[0], userPos[1], u.lat, u.lng) <= 100
-  })
+  }), [remoteUsers, isAdmin, userPos])
 
   return (
     <>
@@ -528,8 +538,10 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
 
         {!isRaceActive && userPos && (
           <Marker longitude={userPos[1]} latitude={userPos[0]} anchor="center">
-            <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center">
-              <Flag size={14} className="text-white" />
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg border-2 ${
+              isAdmin ? 'bg-yellow-500 border-yellow-300' : 'bg-blue-500 border-white'
+            }`}>
+              {isAdmin ? <Shield size={14} className="text-white" /> : <Flag size={14} className="text-white" />}
             </div>
           </Marker>
         )}

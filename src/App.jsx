@@ -38,6 +38,8 @@ function App() {
 
   const [userName, setUserName] = useState(() => getDeviceName())
   const [nameInput, setNameInput] = useState('')
+  const [remoteUsers, setRemoteUsers] = useState({})
+  const [locateCoords, setLocateCoords] = useState(null)
 
   const stopsRef = useRef(stops)
   stopsRef.current = stops
@@ -222,6 +224,8 @@ function App() {
         setIsSharing={setIsSharing}
         isAdmin={isAdmin}
         supabaseStatus={supabaseStatus}
+        onRemoteUsers={setRemoteUsers}
+        locateCoords={locateCoords}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -247,6 +251,8 @@ function App() {
         onDeleteRoute={handleDeleteRoute}
         deviceName={userName}
         onDeviceNameChange={setUserName}
+        remoteUsers={remoteUsers}
+        onLocateDevice={setLocateCoords}
       />
       <QuickActionButton onClick={() => setRecenterTrigger(t => t + 1)} />
     </div>
