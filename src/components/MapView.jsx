@@ -102,7 +102,7 @@ function isOwnStaleRecord(row) {
   return false
 }
 
-function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, onRemoteUsers, locateCoords, /* testSimActive, onToggleTestSim */ }) {
+function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop, setIsAddingStop, supabaseUrl, supabaseKey, isSharing, setIsSharing, isAdmin, onRemoteUsers, locateCoords, devicePlate, /* testSimActive, onToggleTestSim */ }) {
   const mapRef = useRef(null)
   const [userPos, setUserPos] = useState(null)
   const [geoStatus, setGeoStatus] = useState('idle')
@@ -151,20 +151,19 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     })
   }, [stops])
 
-  const requestLocation = useCallback(() => {
+  useEffect(() => {
     if (!navigator.geolocation) { setGeoStatus('unsupported'); return }
     setGeoStatus('loading')
-    navigator.geolocation.getCurrentPosition(
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const lat = pos.coords.latitude; const lng = pos.coords.longitude
-        setUserPos([lat, lng]); setGeoStatus('success')
+        setUserPos([pos.coords.latitude, pos.coords.longitude])
+        setGeoStatus('success')
       },
       () => setGeoStatus('denied'),
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     )
+    return () => navigator.geolocation.clearWatch(watchId)
   }, [])
-
-  useEffect(() => { requestLocation() }, [requestLocation])
 
   const runSimulation = useCallback((coords) => {
     setRouteCoords(coords); setSimPos(coords[0]); setSimIdx(0); simRef.current.running = true
@@ -280,9 +279,14 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
     const send = async () => {
       const [lat, lng] = userPos
+      const myName = getDeviceName()
+      if (myName) {
+        await sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName)
+      }
       await sb.from('locations').upsert({
         device_id: getDeviceId(),
-        name: getDeviceName() || getDeviceId().slice(0, 8),
+        name: myName || getDeviceId().slice(0, 8),
+        plate: devicePlate || '',
         lat, lng, heading: 0,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'device_id', ignoreDuplicates: false }).maybeSingle()
@@ -291,7 +295,13 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     locationIntervalRef.current = setInterval(send, 3000)
     return () => {
       if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
-      if (sb) sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+      if (sb) {
+        const myName = getDeviceName()
+        if (myName) {
+          sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName).then(() => {})
+        }
+        sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+      }
     }
   }, [isSharing, userPos, supabaseUrl, supabaseKey])
 
@@ -478,15 +488,20 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     return s
   }, [isRaceActive, simIdx, stops.length])
 
-  const visibleUsers = useMemo(() => Object.entries(remoteUsers).filter(([id, u]) => {
-    if (id.startsWith('test-')) return false
-    if (isOwnStaleRecord(u)) return false
-    const age = Date.now() - new Date(u.updated_at).getTime()
-    if (age > 20000) return false
-    if (isAdmin) return true
-    if (!userPos) return false
-    return haversineDist(userPos[0], userPos[1], u.lat, u.lng) <= 100
-  }), [remoteUsers, isAdmin, userPos])
+  const visibleUsers = useMemo(() => {
+    const myId = getDeviceId()
+    const myName = getDeviceName()
+    return Object.entries(remoteUsers).filter(([id, u]) => {
+      if (id.startsWith('test-')) return false
+      if (u.device_id === myId) return false
+      if (isSharing && myName && u.name === myName) return false
+      const age = Date.now() - new Date(u.updated_at).getTime()
+      if (age > 20000) return false
+      if (isAdmin) return true
+      if (!userPos) return false
+      return haversineDist(userPos[0], userPos[1], u.lat, u.lng) <= 100
+    })
+  }, [remoteUsers, isAdmin, userPos, isSharing])
 
   return (
     <>
@@ -559,6 +574,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
                   <div className="bg-[#111113] text-white text-[9px] px-1.5 py-0.5 rounded border border-white/10 shadow-lg flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                     {user.name || deviceId.slice(0, 8)}
+                    {user.plate && <span className="text-gray-400 font-mono">· {user.plate}</span>}
                   </div>
                 </div>
               </div>
@@ -610,7 +626,14 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       {!isSidebarOpen && (
         <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
           {geoStatus === 'denied' && (
-            <button onClick={requestLocation}
+            <button onClick={() => {
+              if (!navigator.geolocation) return
+              navigator.geolocation.getCurrentPosition(
+                (pos) => { setUserPos([pos.coords.latitude, pos.coords.longitude]); setGeoStatus('success') },
+                () => {},
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+              )
+            }}
               className="p-2.5 bg-[#111113] rounded-xl shadow-lg text-white hover:bg-[#1f1f22] border border-white/10 transition-all"
               title="Activar ubicación"><LocateOff size={18} /></button>
           )}

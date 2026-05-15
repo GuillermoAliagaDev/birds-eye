@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
-import { getSupabase, normalizeUrl, getDeviceName, setDeviceName } from './lib/supabase'
+import { getSupabase, normalizeUrl, getDeviceName, setDeviceName, getDevicePlate, setDevicePlate } from './lib/supabase'
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -38,6 +38,8 @@ function App() {
 
   const [userName, setUserName] = useState(() => getDeviceName())
   const [nameInput, setNameInput] = useState('')
+  const [devicePlate, setDevicePlateState] = useState(() => getDevicePlate())
+  const [plateInput, setPlateInput] = useState('')
   const [remoteUsers, setRemoteUsers] = useState({})
   const [locateCoords, setLocateCoords] = useState(null)
 
@@ -168,8 +170,11 @@ function App() {
     if (!name) return
     setDeviceName(name)
     setUserName(name)
+    setDevicePlate(plateInput.trim())
+    setDevicePlateState(plateInput.trim())
     setNameInput('')
-  }, [nameInput])
+    setPlateInput('')
+  }, [nameInput, plateInput])
 
   const nameKey = (e) => { if (e.key === 'Enter') handleConfirmName() }
 
@@ -177,34 +182,58 @@ function App() {
     <div className="relative w-full h-dvh">
       {!userName && (
         <div className="absolute inset-0 z-[100] bg-[#111113] flex items-center justify-center p-6">
+          <button onClick={() => {
+            setDeviceName('admin')
+            setUserName('admin')
+            handleSetIsAdmin(true)
+          }}
+            className="absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] bg-yellow-500/12 text-yellow-400/80 border border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300 transition-all"
+          >Admin</button>
+
           <div className="w-full max-w-sm">
             <div className="text-center mb-8">
-              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="text-blue-400 lucide lucide-navigation"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+              <div className="w-11 h-11 rounded-full bg-blue-500/15 flex items-center justify-center mx-auto mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="text-blue-400 lucide lucide-navigation"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
               </div>
-              <h1 className="text-xl font-bold text-white mb-2">Birds Eye</h1>
-              <p className="text-sm text-white/60">GIS en tiempo real</p>
+              <h1 className="text-lg font-bold text-white mb-1">Birds Eye</h1>
+              <p className="text-xs text-white/50">GIS en tiempo real</p>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-white/60 mb-1.5 block">Tu nombre (máx. 16 caracteres)</label>
+                <label className="text-[11px] text-white/50 mb-1.5 block">Nombre</label>
                 <input value={nameInput} onChange={e => setNameInput(e.target.value.slice(0, 16))} onKeyDown={nameKey}
                   placeholder="Ej: Guille" maxLength={16}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
                   autoFocus
                 />
-                <div className="text-right text-[10px] text-white/30 mt-1">{nameInput.length}/16</div>
               </div>
 
-              <button onClick={handleConfirmName} disabled={!nameInput.trim()}
-                className="w-full py-3 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              <div>
+                <label className="text-[11px] text-white/50 mb-1.5 block">Placa (opcional)</label>
+                <input value={plateInput} onChange={e => setPlateInput(e.target.value.toUpperCase().slice(0, 10))} onKeyDown={nameKey}
+                  placeholder="ABC-123" maxLength={10}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors font-mono tracking-wider"
+                />
+              </div>
+
+              <button onClick={() => {
+                const name = nameInput.trim().slice(0, 16)
+                if (!name) return
+                setDeviceName(name)
+                setUserName(name)
+                setDevicePlate(plateInput.trim())
+                setDevicePlateState(plateInput.trim())
+                setNameInput('')
+                setPlateInput('')
+              }} disabled={!nameInput.trim()}
+                className="w-full py-2.5 rounded-xl bg-blue-500/90 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Ingresar
               </button>
 
-              <p className="text-[10px] text-white/30 text-center leading-relaxed">
-                Se solicitará permiso de ubicación para mostrarte en el mapa.
+              <p className="text-[10px] text-white/25 text-center leading-relaxed">
+                Se solicitará permiso de ubicación
               </p>
             </div>
           </div>
@@ -226,6 +255,7 @@ function App() {
         supabaseStatus={supabaseStatus}
         onRemoteUsers={setRemoteUsers}
         locateCoords={locateCoords}
+        devicePlate={devicePlate}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -253,6 +283,7 @@ function App() {
         onDeviceNameChange={setUserName}
         remoteUsers={remoteUsers}
         onLocateDevice={setLocateCoords}
+        devicePlate={devicePlate}
       />
       <QuickActionButton onClick={() => setRecenterTrigger(t => t + 1)} />
     </div>

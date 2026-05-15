@@ -36,6 +36,14 @@ export function setDeviceName(name) {
   localStorage.setItem('device_name', name)
 }
 
+export function getDevicePlate() {
+  return localStorage.getItem('device_plate') || ''
+}
+
+export function setDevicePlate(plate) {
+  localStorage.setItem('device_plate', plate)
+}
+
 export function getSupabaseCredentials() {
   return {
     url: localStorage.getItem('supabase_url') || '',
