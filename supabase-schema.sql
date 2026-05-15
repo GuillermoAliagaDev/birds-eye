@@ -3,6 +3,7 @@ CREATE TABLE locations (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   device_id TEXT NOT NULL,
   name TEXT DEFAULT '',
+  plate TEXT DEFAULT '',
   lat DOUBLE PRECISION NOT NULL,
   lng DOUBLE PRECISION NOT NULL,
   heading DOUBLE PRECISION DEFAULT 0,
@@ -60,6 +61,7 @@ ALTER TABLE routes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow anonymous insert" ON locations FOR INSERT TO anon WITH CHECK (true);
 CREATE POLICY "Allow anonymous update" ON locations FOR UPDATE TO anon USING (true);
 CREATE POLICY "Allow anonymous select" ON locations FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow anonymous delete" ON locations FOR DELETE TO anon USING (true);
 CREATE POLICY "Allow anonymous select routes" ON routes FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anonymous insert routes" ON routes FOR INSERT TO anon WITH CHECK (true);
 CREATE POLICY "Allow anonymous update routes" ON routes FOR UPDATE TO anon USING (true);

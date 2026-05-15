@@ -249,61 +249,9 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
           if (keys.length > 50) delete fullPreviewCacheRef.current[keys[0]]
           setFullPreviewCoords(coords)
         }
-      } catch {}
-      setFullPreviewLoading(false)
-    }, 500)
-    return () => { if (fullPreviewTimerRef.current) clearTimeout(fullPreviewTimerRef.current) }
+      } catch (_) {}
+    }, 2000)
   }, [stops, isRaceActive])
-
-  useEffect(() => {
-    if (!routeCoords || stops.length < 2) { stopIndicesRef.current = []; return }
-    const indices = stops.map(stop => {
-      let minDist = Infinity, minIdx = 0
-      for (let i = 0; i < routeCoords.length; i++) {
-        const [lng, lat] = routeCoords[i]
-        const d = (lng - stop.lng) ** 2 + (lat - stop.lat) ** 2
-        if (d < minDist) { minDist = d; minIdx = i }
-      }
-      return minIdx
-    })
-    stopIndicesRef.current = indices
-  }, [routeCoords, stops])
-
-  useEffect(() => {
-    const sb = getSupabase(supabaseUrl, supabaseKey)
-    if (!isSharing || !userPos || !sb) {
-      if (sb) sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
-      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
-      return
-    }
-    sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
-    const send = async () => {
-      const [lat, lng] = userPos
-      const myName = getDeviceName()
-      if (myName) {
-        await sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName)
-      }
-      await sb.from('locations').upsert({
-        device_id: getDeviceId(),
-        name: myName || getDeviceId().slice(0, 8),
-        plate: devicePlate || '',
-        lat, lng, heading: 0,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'device_id', ignoreDuplicates: false }).maybeSingle()
-    }
-    send()
-    locationIntervalRef.current = setInterval(send, 3000)
-    return () => {
-      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
-      if (sb) {
-        const myName = getDeviceName()
-        if (myName) {
-          sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName).then(() => {})
-        }
-        sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
-      }
-    }
-  }, [isSharing, userPos, supabaseUrl, supabaseKey])
 
   // cleanup stale data, then fetch remote users
   useEffect(() => {
@@ -631,7 +579,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
               navigator.geolocation.getCurrentPosition(
                 (pos) => { setUserPos([pos.coords.latitude, pos.coords.longitude]); setGeoStatus('success') },
                 () => {},
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
               )
             }}
               className="p-2.5 bg-[#111113] rounded-xl shadow-lg text-white hover:bg-[#1f1f22] border border-white/10 transition-all"
