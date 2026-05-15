@@ -13,6 +13,7 @@ function Sidebar({
   isSharing, setIsSharing, isAdmin, setIsAdmin, supabaseStatus,
   // testSimActive, onToggleTestSim,
   routes, activeRouteId, onSelectRoute, onCreateRoute, onSaveRoute, onDeleteRoute,
+  deviceName, onDeviceNameChange,
 }) {
   const [activeItem, setActiveItem] = useState(0)
 
@@ -224,8 +225,8 @@ function Sidebar({
                       </button>
                     </div>
 
-                    <input defaultValue={getDeviceName()} onChange={e => setDeviceName(e.target.value)}
-                      placeholder="Tu nombre"
+                    <input value={deviceName} onChange={e => { const v = e.target.value.slice(0, 16); setDeviceName(v); onDeviceNameChange(v) }}
+                      placeholder="Tu nombre" maxLength={16}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
                     />
 

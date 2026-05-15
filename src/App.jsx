@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
-import { getSupabase, normalizeUrl } from './lib/supabase'
+import { getSupabase, normalizeUrl, getDeviceName, setDeviceName } from './lib/supabase'
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -35,6 +35,9 @@ function App() {
   const [stops, setStops] = useState([])
   const [isAddingStop, setIsAddingStop] = useState(false)
   // const [testSimActive, setTestSimActive] = useState(false)
+
+  const [userName, setUserName] = useState(() => getDeviceName())
+  const [nameInput, setNameInput] = useState('')
 
   const stopsRef = useRef(stops)
   stopsRef.current = stops
@@ -158,8 +161,54 @@ function App() {
     setSupabaseKey(key); localStorage.setItem('supabase_anon_key', key)
   }, [])
 
+  const handleConfirmName = useCallback(() => {
+    const name = nameInput.trim().slice(0, 16)
+    if (!name) return
+    setDeviceName(name)
+    setUserName(name)
+    setNameInput('')
+  }, [nameInput])
+
+  const nameKey = (e) => { if (e.key === 'Enter') handleConfirmName() }
+
   return (
     <div className="relative w-full h-dvh">
+      {!userName && (
+        <div className="absolute inset-0 z-[100] bg-[#111113] flex items-center justify-center p-6">
+          <div className="w-full max-w-sm">
+            <div className="text-center mb-8">
+              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="text-blue-400 lucide lucide-navigation"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+              </div>
+              <h1 className="text-xl font-bold text-white mb-2">Birds Eye</h1>
+              <p className="text-sm text-white/60">GIS en tiempo real</p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-white/60 mb-1.5 block">Tu nombre (máx. 16 caracteres)</label>
+                <input value={nameInput} onChange={e => setNameInput(e.target.value.slice(0, 16))} onKeyDown={nameKey}
+                  placeholder="Ej: Guille" maxLength={16}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none focus:border-blue-500/50 transition-colors"
+                  autoFocus
+                />
+                <div className="text-right text-[10px] text-white/30 mt-1">{nameInput.length}/16</div>
+              </div>
+
+              <button onClick={handleConfirmName} disabled={!nameInput.trim()}
+                className="w-full py-3 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Ingresar
+              </button>
+
+              <p className="text-[10px] text-white/30 text-center leading-relaxed">
+                Se solicitará permiso de ubicación para mostrarte en el mapa.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <MapView
         isSidebarOpen={isSidebarOpen}
         recenterTrigger={recenterTrigger}
@@ -196,6 +245,8 @@ function App() {
         onCreateRoute={handleCreateRoute}
         onSaveRoute={handleSaveRoute}
         onDeleteRoute={handleDeleteRoute}
+        deviceName={userName}
+        onDeviceNameChange={setUserName}
       />
       <QuickActionButton onClick={() => setRecenterTrigger(t => t + 1)} />
     </div>
