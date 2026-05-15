@@ -168,10 +168,11 @@ function App() {
   const handleConfirmName = useCallback(() => {
     const name = nameInput.trim().slice(0, 16)
     if (!name) return
+    const plate = plateInput.trim()
     setDeviceName(name)
     setUserName(name)
-    setDevicePlate(plateInput.trim())
-    setDevicePlateState(plateInput.trim())
+    setDevicePlate(plate)
+    setDevicePlateState(plate)
     setNameInput('')
     setPlateInput('')
   }, [nameInput, plateInput])
@@ -210,9 +211,11 @@ function App() {
               </div>
 
               <div>
-                <label className="text-[11px] text-white/50 mb-1.5 block">Placa (opcional)</label>
-                <input value={plateInput} onChange={e => setPlateInput(e.target.value.toUpperCase().slice(0, 10))} onKeyDown={nameKey}
-                  placeholder="ABC-123" maxLength={10}
+                <label className="text-[11px] text-white/50 mb-1.5 block">Placa (opcional · 6 caracteres)</label>
+                <input value={plateInput} onChange={e => {
+                  setPlateInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 7))
+                }} onKeyDown={nameKey}
+                  placeholder="ABC-123" maxLength={7}
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors font-mono tracking-wider"
                 />
               </div>
@@ -220,10 +223,11 @@ function App() {
               <button onClick={() => {
                 const name = nameInput.trim().slice(0, 16)
                 if (!name) return
+                const plate = plateInput.trim()
                 setDeviceName(name)
                 setUserName(name)
-                setDevicePlate(plateInput.trim())
-                setDevicePlateState(plateInput.trim())
+                setDevicePlate(plate)
+                setDevicePlateState(plate)
                 setNameInput('')
                 setPlateInput('')
               }} disabled={!nameInput.trim()}

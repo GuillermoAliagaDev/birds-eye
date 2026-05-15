@@ -574,7 +574,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
                   <div className="bg-[#111113] text-white text-[9px] px-1.5 py-0.5 rounded border border-white/10 shadow-lg flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                     {user.name || deviceId.slice(0, 8)}
-                    {user.plate && <span className="text-gray-400 font-mono">· {user.plate}</span>}
+                    {isAdmin && user.plate && <span className="text-gray-400 font-mono">· {user.plate}</span>}
                   </div>
                 </div>
               </div>
