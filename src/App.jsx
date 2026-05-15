@@ -49,6 +49,7 @@ function App() {
 
   useEffect(() => {
     if (!supabaseUrl || !supabaseKey) { setSupabaseStatus('idle'); return }
+    if (!/^https?:\/\/.+\./.test(supabaseUrl)) { setSupabaseStatus('error'); return }
     setSupabaseStatus('checking')
     const sb = getSupabase(supabaseUrl, supabaseKey)
     if (!sb) { setSupabaseStatus('error'); return }
