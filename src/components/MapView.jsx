@@ -4,17 +4,17 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { Flag, LocateOff } from 'lucide-react'
 import { getSupabase, getDeviceId, getDeviceName } from '../lib/supabase'
 
-const osmStyle = {
+const mapStyle = {
   version: 8,
   sources: {
-    osm: {
+    carto: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: ['https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
     },
   },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
 }
 
 const initialView = {
@@ -482,7 +482,7 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     <>
       <Map
         ref={mapRef}
-        mapStyle={osmStyle}
+        mapStyle={mapStyle}
         initialViewState={initialView}
         style={{ width: '100%', height: '100dvh' }}
         attributionControl={false}
