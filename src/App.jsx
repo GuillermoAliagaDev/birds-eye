@@ -189,9 +189,18 @@ function App() {
             setDeviceName(existingName)
             setUserName(existingName)
             handleSetIsAdmin(true)
-          }}
-            className="absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] bg-yellow-500/12 text-yellow-400/80 border border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300 transition-all"
+          }} disabled={!supabaseUrl || !supabaseKey}
+            className={`absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] border transition-all ${
+              supabaseUrl && supabaseKey
+                ? 'bg-yellow-500/12 text-yellow-400/80 border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300'
+                : 'bg-white/[0.03] text-gray-600 border-white/[0.06] cursor-not-allowed'
+            }`}
           >Admin</button>
+          {(!supabaseUrl || !supabaseKey) && (
+            <div className="absolute top-4 right-4 mt-8 z-10 text-[9px] text-gray-600 text-right px-1 pointer-events-none">
+              Configura Supabase abajo
+            </div>
+          )}
 
           <div className="w-full max-w-sm">
             <div className="text-center mb-8">
@@ -213,12 +222,25 @@ function App() {
               </div>
 
               <div>
-                <label className="text-[11px] text-white/50 mb-1.5 block">Placa (opcional · 6 caracteres)</label>
+                <label className="text-[11px] text-white/50 mb-1.5 block">Placa (opcional)</label>
                 <input value={plateInput} onChange={e => {
                   setPlateInput(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 7))
                 }} onKeyDown={nameKey}
                   placeholder="ABC-123" maxLength={7}
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors font-mono tracking-wider"
+                />
+              </div>
+
+              <div className="border-t border-white/[0.06] pt-3 space-y-2">
+                <div className="text-[10px] text-white/40 font-medium">Supabase (requerido para admin)</div>
+                <input value={supabaseUrl} onChange={e => handleSetSupabaseUrl(e.target.value)}
+                  placeholder="https://xyz.supabase.co"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
+                />
+                <input value={supabaseKey} onChange={e => handleSetSupabaseKey(e.target.value)}
+                  placeholder="Anon Key"
+                  type="password"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
                 />
               </div>
 
@@ -233,7 +255,11 @@ function App() {
                 setNameInput('')
                 setPlateInput('')
               }} disabled={!nameInput.trim()}
-                className="w-full py-2.5 rounded-xl bg-blue-500/90 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className={`w-full py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  supabaseUrl && supabaseKey
+                    ? 'bg-blue-500/90 text-white hover:bg-blue-600'
+                    : 'bg-blue-500/60 text-white/70'
+                } disabled:opacity-30 disabled:cursor-not-allowed`}
               >
                 Ingresar
               </button>
