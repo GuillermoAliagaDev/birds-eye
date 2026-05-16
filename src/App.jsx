@@ -60,13 +60,14 @@ function App() {
 
   useEffect(() => {
     if (supabaseStatus === 'connected' && !autoSharedRef.current) {
+      if (!userName) return
       autoSharedRef.current = true
       setIsSharing(true)
     }
     if (supabaseStatus !== 'connected') {
       autoSharedRef.current = false
     }
-  }, [isAdmin, supabaseStatus])
+  }, [isAdmin, supabaseStatus, userName])
 
   useEffect(() => {
     if (!supabaseUrl || !supabaseKey || supabaseStatus !== 'connected') return

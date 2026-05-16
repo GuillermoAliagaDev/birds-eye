@@ -312,12 +312,11 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
       try {
         const [lat, lng] = userPos
         const myName = getDeviceName()
-        if (myName) {
-          await sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName)
-        }
+        if (!myName) return
+        await sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName)
         await sb.from('locations').upsert({
           device_id: getDeviceId(),
-          name: myName || getDeviceId().slice(0, 8),
+          name: myName,
           plate: devicePlate || '',
           lat, lng, heading: 0,
           updated_at: new Date().toISOString(),
