@@ -22,10 +22,7 @@ function App() {
     return ''
   })
   const [isAdmin, setIsAdmin] = useState(() => {
-    const stored = localStorage.getItem('is_admin')
-    if (stored === 'true' || stored === 'false') return stored === 'true'
-    if (import.meta.env.VITE_IS_ADMIN === 'true') { localStorage.setItem('is_admin', 'true'); return true }
-    return false
+    try { return localStorage.getItem('is_admin') === 'true' } catch { return false }
   })
   const [isSharing, setIsSharing] = useState(false)
   const [supabaseStatus, setSupabaseStatus] = useState('idle')
