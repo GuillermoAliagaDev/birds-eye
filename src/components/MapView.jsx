@@ -300,6 +300,44 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
     }
   }, [supabaseUrl, supabaseKey])
 
+  useEffect(() => {
+    const sb = getSupabase(supabaseUrl, supabaseKey)
+    if (!isSharing || !userPos || !sb) {
+      if (sb) sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
+      return
+    }
+    sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+    const send = async () => {
+      try {
+        const [lat, lng] = userPos
+        const myName = getDeviceName()
+        if (myName) {
+          await sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName)
+        }
+        await sb.from('locations').upsert({
+          device_id: getDeviceId(),
+          name: myName || getDeviceId().slice(0, 8),
+          plate: devicePlate || '',
+          lat, lng, heading: 0,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'device_id', ignoreDuplicates: false }).maybeSingle()
+      } catch (_) {}
+    }
+    send()
+    locationIntervalRef.current = setInterval(send, 3000)
+    return () => {
+      if (locationIntervalRef.current) { clearInterval(locationIntervalRef.current); locationIntervalRef.current = null }
+      if (sb) {
+        const myName = getDeviceName()
+        if (myName) {
+          sb.from('locations').delete().neq('device_id', getDeviceId()).eq('name', myName).then(() => {})
+        }
+        sb.from('locations').delete().eq('device_id', getDeviceId()).then(() => {})
+      }
+    }
+  }, [isSharing, userPos, supabaseUrl, supabaseKey])
+
   // test-sim commented out
   // useEffect(() => {
   //   if (!testSimActive || !supabaseUrl || !supabaseKey) {

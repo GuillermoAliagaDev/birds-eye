@@ -40,6 +40,9 @@ function App() {
   const [nameInput, setNameInput] = useState('')
   const [devicePlate, setDevicePlateState] = useState(() => getDevicePlate())
   const [plateInput, setPlateInput] = useState('')
+  const [showAdminDialog, setShowAdminDialog] = useState(false)
+  const [adminUrlInput, setAdminUrlInput] = useState(() => supabaseUrl)
+  const [adminKeyInput, setAdminKeyInput] = useState(() => supabaseKey)
   const [remoteUsers, setRemoteUsers] = useState({})
   const [locateCoords, setLocateCoords] = useState(null)
 
@@ -184,21 +187,43 @@ function App() {
     <div className="relative w-full h-dvh">
       {!userName && (
         <div className="absolute inset-0 z-[100] bg-[#111113] flex items-center justify-center p-6">
-          <button onClick={() => {
-            const existingName = getDeviceName() || 'admin'
-            setDeviceName(existingName)
-            setUserName(existingName)
-            handleSetIsAdmin(true)
-          }} disabled={!supabaseUrl || !supabaseKey}
-            className={`absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] border transition-all ${
-              supabaseUrl && supabaseKey
-                ? 'bg-yellow-500/12 text-yellow-400/80 border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300'
-                : 'bg-white/[0.03] text-gray-600 border-white/[0.06] cursor-not-allowed'
-            }`}
+          {/* Admin button in corner */}
+          <button onClick={() => setShowAdminDialog(true)}
+            className="absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] bg-yellow-500/12 text-yellow-400/80 border border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300 transition-all"
           >Admin</button>
-          {(!supabaseUrl || !supabaseKey) && (
-            <div className="absolute top-4 right-4 mt-8 z-10 text-[9px] text-gray-600 text-right px-1 pointer-events-none">
-              Configura Supabase abajo
+
+          {/* Admin config dialog */}
+          {showAdminDialog && (
+            <div className="absolute inset-0 z-20 bg-black/60 flex items-center justify-center p-6" onClick={() => setShowAdminDialog(false)}>
+              <div className="w-full max-w-xs bg-[#1a1a1d] rounded-2xl p-5 border border-white/[0.08] shadow-2xl" onClick={e => e.stopPropagation()}>
+                <h3 className="text-sm font-semibold text-white mb-4">Configurar Admin</h3>
+                <div className="space-y-3">
+                  <input value={adminUrlInput} onChange={e => setAdminUrlInput(e.target.value)}
+                    placeholder="https://xyz.supabase.co"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
+                  />
+                  <input value={adminKeyInput} onChange={e => setAdminKeyInput(e.target.value)}
+                    placeholder="Anon Key"
+                    type="password"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
+                  />
+                  <button onClick={() => {
+                    if (!adminUrlInput || !adminKeyInput) return
+                    handleSetSupabaseUrl(adminUrlInput)
+                    handleSetSupabaseKey(adminKeyInput)
+                    const existingName = getDeviceName() || 'admin'
+                    setDeviceName(existingName)
+                    setUserName(existingName)
+                    handleSetIsAdmin(true)
+                    setShowAdminDialog(false)
+                  }} disabled={!adminUrlInput || !adminKeyInput}
+                    className="w-full py-2.5 rounded-xl bg-yellow-500/90 text-white text-sm font-medium hover:bg-yellow-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >Ingresar como admin</button>
+                </div>
+                <button onClick={() => setShowAdminDialog(false)}
+                  className="mt-3 w-full text-[11px] text-gray-500 hover:text-gray-400 transition-colors"
+                >Cancelar</button>
+              </div>
             </div>
           )}
 
@@ -231,19 +256,6 @@ function App() {
                 />
               </div>
 
-              <div className="border-t border-white/[0.06] pt-3 space-y-2">
-                <div className="text-[10px] text-white/40 font-medium">Supabase (requerido para admin)</div>
-                <input value={supabaseUrl} onChange={e => handleSetSupabaseUrl(e.target.value)}
-                  placeholder="https://xyz.supabase.co"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
-                />
-                <input value={supabaseKey} onChange={e => handleSetSupabaseKey(e.target.value)}
-                  placeholder="Anon Key"
-                  type="password"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-blue-500/40 transition-colors"
-                />
-              </div>
-
               <button onClick={() => {
                 const name = nameInput.trim().slice(0, 16)
                 if (!name) return
@@ -255,11 +267,7 @@ function App() {
                 setNameInput('')
                 setPlateInput('')
               }} disabled={!nameInput.trim()}
-                className={`w-full py-2.5 rounded-xl text-sm font-medium transition-all ${
-                  supabaseUrl && supabaseKey
-                    ? 'bg-blue-500/90 text-white hover:bg-blue-600'
-                    : 'bg-blue-500/60 text-white/70'
-                } disabled:opacity-30 disabled:cursor-not-allowed`}
+                className="w-full py-2.5 rounded-xl bg-blue-500/90 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Ingresar
               </button>
