@@ -154,14 +154,13 @@ function MapView({ isSidebarOpen, recenterTrigger, stops, setStops, isAddingStop
   useEffect(() => {
     if (!navigator.geolocation) { setGeoStatus('unsupported'); return }
     setGeoStatus('loading')
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserPos([pos.coords.latitude, pos.coords.longitude])
-        setGeoStatus('success')
-      },
-      () => setGeoStatus('denied'),
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-    )
+    const onSuccess = (pos) => {
+      setUserPos([pos.coords.latitude, pos.coords.longitude])
+      setGeoStatus('success')
+    }
+    const onError = () => setGeoStatus('denied')
+    navigator.geolocation.getCurrentPosition(onSuccess, onError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+    const watchId = navigator.geolocation.watchPosition(onSuccess, onError, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 })
     return () => navigator.geolocation.clearWatch(watchId)
   }, [])
 

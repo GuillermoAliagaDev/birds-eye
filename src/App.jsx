@@ -185,8 +185,9 @@ function App() {
       {!userName && (
         <div className="absolute inset-0 z-[100] bg-[#111113] flex items-center justify-center p-6">
           <button onClick={() => {
-            setDeviceName('admin')
-            setUserName('admin')
+            const existingName = getDeviceName() || 'admin'
+            setDeviceName(existingName)
+            setUserName(existingName)
             handleSetIsAdmin(true)
           }}
             className="absolute top-4 right-4 z-10 px-3 py-1.5 rounded-lg text-[11px] bg-yellow-500/12 text-yellow-400/80 border border-yellow-500/20 hover:bg-yellow-500/20 hover:text-yellow-300 transition-all"
