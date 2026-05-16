@@ -16,9 +16,9 @@ function App() {
   })
   const [supabaseKey, setSupabaseKey] = useState(() => {
     const stored = localStorage.getItem('supabase_anon_key')
-    if (stored) return stored
+    if (stored) return stored.trim()
     const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-    if (envKey) { localStorage.setItem('supabase_anon_key', envKey); return envKey }
+    if (envKey) { const trimmed = envKey.trim(); localStorage.setItem('supabase_anon_key', trimmed); return trimmed }
     return ''
   })
   const [isAdmin, setIsAdmin] = useState(() => {
@@ -163,7 +163,8 @@ function App() {
   }, [])
 
   const handleSetSupabaseKey = useCallback((key) => {
-    setSupabaseKey(key); localStorage.setItem('supabase_anon_key', key)
+    const trimmed = key.trim()
+    setSupabaseKey(trimmed); localStorage.setItem('supabase_anon_key', trimmed)
   }, [])
 
   const handleConfirmName = useCallback(() => {
