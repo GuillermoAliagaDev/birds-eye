@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import MapView from './components/MapView'
+import GpsCalculation from './components/GpsCalculation'
 import Sidebar from './components/Sidebar'
 import QuickActionButton from './components/QuickActionButton'
 import { getSupabase, normalizeUrl, getDeviceName, setDeviceName, getDevicePlate, setDevicePlate } from './lib/supabase'
@@ -329,4 +330,6 @@ function App() {
   )
 }
 
-export default App
+export default function Root() {
+  return window.location.pathname === '/gps-calculation' ? <GpsCalculation /> : <App />
+}

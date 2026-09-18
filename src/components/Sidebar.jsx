@@ -330,6 +330,9 @@ function Sidebar({
           )}
         </div>
 
+        <div className="px-3 pb-2 border-t border-white/[0.06] pt-3">
+          <a href="/gps-calculation" className="block rounded-lg bg-orange-500/10 border border-orange-500/20 px-3 py-2 text-xs text-orange-300 hover:bg-orange-500/20">GPS calculation · simulador LBS</a>
+        </div>
         <div className="p-3 border-t border-white/[0.06] text-[10px] text-gray-600 text-center">
           {routes.length} rutas · {isAdmin ? 'Admin' : 'Visor'}
         </div>

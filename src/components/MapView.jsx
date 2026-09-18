@@ -4,18 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { Flag, LocateOff, Shield } from 'lucide-react'
 import { getSupabase, getDeviceId, getDeviceName } from '../lib/supabase'
 
-const mapStyle = {
-  version: 8,
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: ['https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-    },
-  },
-  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
-}
+const mapStyle = 'https://tiles.openfreemap.org/styles/liberty'
 
 const initialView = {
   longitude: -77.0315, latitude: -12.1202, zoom: 15, pitch: 60, bearing: 0,
