@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Map, { Marker, Source, Layer, NavigationControl } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { matchGnssTrace } from '../lib/gnssMatcher'
 
 const mapStyle = 'https://tiles.openfreemap.org/styles/liberty'
 const samples = [
@@ -13,6 +14,7 @@ const meters = (a, b) => Math.hypot((a[0] - b[0]) * 108700, (a[1] - b[1]) * 1111
 const offset = (p, east, north) => [p[0] + east / 108700, p[1] + north / 111100]
 const rand = seed => { const x = Math.sin(seed * 127.1 + 78.233) * 43758.5453; return x - Math.floor(x) }
 const lineFeature = points => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: points }, properties: {} })
+const lineCollection = lines => ({ type: 'FeatureCollection', features: lines.map(lineFeature) })
 const line = (id, color, dashed = false) => ({ id, type: 'line', paint: { 'line-color': color, 'line-width': 3, 'line-opacity': 0.85, ...(dashed ? { 'line-dasharray': [2, 2] } : {}) } })
 const makeRoad = points => {
   const lengths = [0]
@@ -39,6 +41,7 @@ const initialDevice = id => {
     sampleTime: id === 2 ? -19 : (source === 'gnss' ? 0 : null), nextSample: source === 'lbs' ? 0 : 2,
     heading: 0, road: null, travel: 0, routing: false, failures: 0, pending: [],
     truthPath: [anchor], reportedPath: initialReported ? [initialReported] : [],
+    gnssFixes: source === 'gnss' ? [{ point: anchor, timestamp: 1789656050, accuracy: sample?.accuracy || 5.5, speedKmh: sample?.speed || 0, isMoving: id !== 0 }] : [],
   }
 }
 function CarIcon({ id, selected, ghost = false }) {
@@ -60,6 +63,7 @@ export default function GpsCalculation() {
   const [playing, setPlaying] = useState(true)
   const [selected, setSelected] = useState(0)
   const [snapshot, setSnapshot] = useState({ time: 0, devices: Array.from({ length: 12 }, (_, i) => initialDevice(i)), routeErrors: 0 })
+  const [matchResult, setMatchResult] = useState({ lines: [], confidence: null, status: 'insufficient' })
   const engine = useRef(null)
   const settings = useRef({ lbsInterval, latency, accuracy, speed, playing })
   settings.current = { lbsInterval, latency, accuracy, speed, playing }
@@ -121,6 +125,9 @@ export default function GpsCalculation() {
           d.sampleTime = time
           d.nextSample = time + 2
           d.reportedPath.push(d.reported)
+          d.gnssFixes.push({ point: d.reported, timestamp: 1789656050 + time, accuracy: d.accuracy,
+            speedKmh: d.speedKmh, isMoving: time >= d.stoppedUntil && d.speedKmh > 2 })
+          if (d.gnssFixes.length > 100) d.gnssFixes.shift()
         }
         if (d.source === 'lbs' && time >= d.nextSample) {
           const angle = rand(d.id * 103 + Math.floor(time)) * Math.PI * 2
@@ -146,11 +153,31 @@ export default function GpsCalculation() {
     return () => { controller.abort(); timers.forEach(window.clearTimeout); window.clearInterval(timer); if (engine.current === world) engine.current = null }
   }, [count, runId])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    setMatchResult({ lines: [], confidence: null, status: 'insufficient' })
+    const updateMatch = async () => {
+      const d = engine.current?.devices[selected]
+      if (!d || d.source !== 'gnss') return
+      try {
+        const result = await matchGnssTrace(d.gnssFixes, { signal: controller.signal })
+        if (active) setMatchResult(result)
+      } catch (error) {
+        if (active && error.name !== 'AbortError') setMatchResult(previous => ({ ...previous, status: 'error' }))
+      }
+    }
+    updateMatch()
+    const timer = window.setInterval(updateMatch, 12000)
+    return () => { active = false; controller.abort(); window.clearInterval(timer) }
+  }, [selected, count, runId])
+
   const device = snapshot.devices[selected]
   const age = device?.sampleTime == null ? null : Math.round(snapshot.time - device.sampleTime)
   const error = device?.reported ? Math.round(meters(device.truth, device.reported)) : null
   const truthLine = useMemo(() => lineFeature(device?.truthPath || []), [device])
   const reportedLine = useMemo(() => lineFeature(device?.reportedPath || []), [device])
+  const matchedLines = useMemo(() => lineCollection(matchResult.lines), [matchResult.lines])
 
   return <div className="h-dvh w-full bg-[#111113] text-white flex flex-col md:flex-row">
     <aside className="w-full md:w-80 shrink-0 p-4 space-y-4 overflow-y-auto border-b md:border-b-0 md:border-r border-white/10 max-h-[45vh] md:max-h-none">
@@ -163,12 +190,14 @@ export default function GpsCalculation() {
       <label className="block text-xs">Velocidad del tiempo: <strong>{speed}×</strong><input aria-label="Velocidad del tiempo" className="w-full accent-blue-400" type="range" min="1" max="10" value={speed} onChange={e => setSpeed(Number(e.target.value))} /></label>
       <div className="flex gap-2"><button className="rounded-lg bg-blue-500 px-3 py-2 text-xs" onClick={() => setPlaying(!playing)}>{playing ? 'Pausar' : 'Continuar'}</button><button className="rounded-lg bg-white/10 px-3 py-2 text-xs" onClick={() => setRunId(n => n + 1)}>Reiniciar</button></div>
       <div className="border-t border-white/10 pt-3 text-xs space-y-1"><div>Tiempo simulado: {Math.round(snapshot.time)}s</div><div>Vehículo: {device?.name || '—'} · {device?.source.toUpperCase() || '—'}</div><div>Estado: {device?.source === 'lbs' ? 'NO_FIX' : device?.id === 0 ? 'FIX_2D' : 'FIX_3D'} · {device?.speedKmh > 1 ? 'en movimiento' : 'detenido'}</div><div>Velocidad: {device?.speedKmh.toFixed(1) || '0.0'} km/h</div><div>Edad de posición: {age == null ? 'esperando' : `${age}s`}</div><div>Precisión declarada: {device?.accuracy || '—'}m</div><div>Desfase frente a posición simulada: {error == null ? 'esperando' : `${error}m`}</div><div>Rutas pendientes: {snapshot.devices.filter(d => !d.road).length}</div>{snapshot.routeErrors > 0 && <div className="text-amber-300">Rutas fallidas: {snapshot.routeErrors} · reintentando</div>}</div>
-      <div className="flex items-center gap-3 text-xs"><span className="text-cyan-300">● Posición simulada</span><span className="text-orange-300">● Reportada</span></div>
+      <div className="text-xs text-emerald-300">GNSS en calles: {device?.source !== 'gnss' ? 'solo GNSS' : matchResult.status === 'matched' ? `coincidencia ${Math.round(matchResult.confidence * 100)}%` : matchResult.status === 'insufficient' ? 'esperando puntos en movimiento' : matchResult.status === 'uncertain' ? 'ruta incierta; se omite' : 'servicio no disponible'}</div>
+      <div className="flex flex-wrap items-center gap-3 text-xs"><span className="text-cyan-300">● Posición simulada</span><span className="text-orange-300">● Reportada</span><span className="text-emerald-300">● GNSS en calles</span></div>
       <div className="grid grid-cols-6 gap-1">{snapshot.devices.map(d => <button key={d.id} onClick={() => setSelected(d.id)} title={d.name} className={`rounded py-1 text-[10px] ${selected === d.id ? 'ring-2 ring-white' : 'hover:ring-1 hover:ring-white/50'}`} style={{ backgroundColor: colorOf(d.id) }}>{d.id + 1}</button>)}</div>
     </aside>
     <main className="flex-1 min-h-0 relative"><Map initialViewState={{ longitude: -77.005, latitude: -12.106, zoom: 12 }} mapStyle={mapStyle} style={{ width: '100%', height: '100%' }}><NavigationControl position="top-right" />
       {device?.truthPath.length > 1 && <Source id="truth-path" type="geojson" data={truthLine}><Layer {...line('truth-line', '#22d3ee', true)} /></Source>}
       {device?.reportedPath.length > 1 && <Source id="reported-path" type="geojson" data={reportedLine}><Layer {...line('reported-line', '#fb923c')} /></Source>}
+      {device?.source === 'gnss' && matchResult.lines.length > 0 && <Source id="matched-path" type="geojson" data={matchedLines}><Layer {...line('matched-line', '#10b981')} /></Source>}
       {snapshot.devices.map(d => <div key={d.id}>{d.source === 'lbs' && <Marker longitude={d.truth[0]} latitude={d.truth[1]} anchor="center" rotation={d.heading} rotationAlignment="map"><CarIcon id={d.id} selected={selected === d.id} ghost /></Marker>}{d.reported && <Marker longitude={d.reported[0]} latitude={d.reported[1]} anchor="center" rotation={d.source === 'gnss' ? d.heading : 0} rotationAlignment="map"><button onClick={() => setSelected(d.id)} title={`${d.name} · ${d.source.toUpperCase()}`} aria-label={`${d.name} · ${d.source.toUpperCase()}`}><CarIcon id={d.id} selected={selected === d.id} /></button></Marker>}</div>)}
     </Map></main>
   </div>
